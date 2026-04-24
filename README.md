@@ -1,12 +1,28 @@
 # 🕺 Dance Pose App
 
-카메라로 춤 동작을 배우는 웹 앱. MediaPipe Pose로 실시간 동작 인식을 하고, 정해진 포즈를 취하면 다음 단계로 넘어갑니다.
+카메라로 15가지 춤 동작을 배우는 웹 앱. MediaPipe Pose로 실시간 동작을 인식하고, 포즈를 1초간 유지하면 다음 단계로 넘어갑니다.
 
 ## ✨ 기능
 
 - 📷 브라우저 카메라로 실시간 포즈 감지
-- 🎯 4가지 기본 포즈 (양손 올리기, T포즈, 오른손 들기, 스쿼트)
-- ⏱️ 1.5초 유지 시 자동 통과
+- 🙌 **준비 단계** - 양손을 머리 위로 올리면 게임 시작
+- 🎯 **15개 포즈** (점진적 난이도)
+  1. 양손 번쩍
+  2. T 포즈
+  3. 왼손 번쩍
+  4. 오른손 번쩍
+  5. 팔짱 끼기
+  6. 왼팔 옆으로
+  7. 오른팔 옆으로
+  8. 왼손 위 + 오른손 옆
+  9. 오른손 위 + 왼손 옆
+  10. 머리 위 손
+  11. 오른손 → 왼쪽 어깨
+  12. 왼손 → 오른쪽 어깨
+  13. Y 포즈
+  14. 왼팔 L자 (알통)
+  15. 피날레 (Y 자세)
+- 🐛 디버그 패널 (실시간 좌표/판정 확인)
 - 📱 모바일/데스크탑 모두 지원
 
 ## 🚀 GitHub + Vercel 배포
@@ -14,66 +30,49 @@
 ### 1. GitHub 저장소 만들기
 
 ```bash
-# 이 폴더에서
 git init
 git add .
 git commit -m "Initial commit"
-
-# GitHub에서 새 저장소 생성 후
 git remote add origin https://github.com/YOUR_USERNAME/dance-pose-app.git
 git branch -M main
 git push -u origin main
 ```
 
-### 2. Vercel에 배포
+### 2. Vercel 배포
 
-**방법 A - Vercel 웹사이트 (가장 쉬움)**
-
-1. [vercel.com](https://vercel.com) 접속 → GitHub로 로그인
-2. "Add New" → "Project" 클릭
-3. 방금 만든 GitHub 저장소 선택 → "Import"
-4. **설정은 아무것도 바꾸지 말고** 바로 "Deploy" 클릭
-5. 1분 내 배포 완료 → `https://your-project.vercel.app` URL 제공
-
-**방법 B - Vercel CLI**
-
-```bash
-npm install -g vercel
-vercel
-```
+1. [vercel.com](https://vercel.com) → GitHub 로그인
+2. **Add New → Project** → GitHub 저장소 선택 → Import
+3. 설정 그대로 두고 **Deploy** 클릭
+4. `https://your-project.vercel.app` 주소 발급
 
 ## 🔧 로컬 테스트
 
-카메라 API는 HTTPS 또는 localhost에서만 동작합니다.
-
 ```bash
-# Python이 있으면
 cd public
 python3 -m http.server 3000
-
-# 또는 npx로
+# 또는
 npx serve public -p 3000
 ```
 
-브라우저에서 `http://localhost:3000` 접속.
+`http://localhost:3000` 접속.
 
 ## 📁 프로젝트 구조
 
 ```
 dance-app/
 ├── public/
-│   ├── index.html      # 메인 HTML
-│   ├── app.js          # 앱 로직 (MediaPipe + 포즈 매칭)
-│   ├── poses.js        # 포즈 정의
+│   ├── index.html      # 메인 HTML (시작/게임/완료 3개 화면)
+│   ├── app.js          # 앱 로직 - 준비 단계 + 본게임
+│   ├── poses.js        # 포즈 15개 + 준비 포즈 정의
 │   └── styles.css      # 스타일
 ├── vercel.json         # Vercel 배포 설정
 ├── package.json
 └── README.md
 ```
 
-## 🎨 포즈 추가 방법
+## 🎨 포즈 추가/수정
 
-`public/poses.js`의 `POSES` 배열에 객체를 추가하면 됩니다:
+`public/poses.js`의 `POSES` 배열을 편집하세요:
 
 ```javascript
 {
@@ -82,20 +81,28 @@ dance-app/
   emoji: "💃",
   instruction: "이런 자세를 취하세요",
   check: (lm) => {
-    // lm[N].x, lm[N].y 로 좌표 접근
-    // 조건 검사 후
-    return { pass: true/false, hint: "피드백 메시지" };
+    // lm[N].x, lm[N].y 로 좌표 접근 (0~1 정규화)
+    return { 
+      pass: true/false, 
+      hint: "피드백 메시지",
+      debug: "디버그 정보"  // 디버그 패널에 표시됨
+    };
   }
 }
 ```
 
-MediaPipe Pose 랜드마크 인덱스:
-- `0` 코, `11/12` 왼/오른 어깨, `13/14` 팔꿈치
-- `15/16` 손목, `23/24` 엉덩이, `25/26` 무릎, `27/28` 발목
+주요 랜드마크 인덱스:
+- `0` 코
+- `11` 왼어깨, `12` 오른어깨
+- `13` 왼팔꿈치, `14` 오른팔꿈치
+- `15` 왼손목, `16` 오른손목
+- `23/24` 엉덩이, `25/26` 무릎, `27/28` 발목
+
+⚠️ MediaPipe는 **사람 몸 기준**이므로 `lm[15]`(left_wrist)는 사람의 왼손목입니다. 화면 거울모드와는 무관.
 
 ## 🛠 기술 스택
 
-- **MediaPipe Tasks Vision** - 브라우저 포즈 감지
+- **MediaPipe Tasks Vision** (@0.10.9) - 브라우저 포즈 감지
 - **바닐라 JS/HTML/CSS** - 프레임워크 없이 가볍게
 - **Vercel** - 정적 사이트 호스팅
 
