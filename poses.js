@@ -1,37 +1,21 @@
-// MediaPipe Pose Landmark 인덱스 참조
-// 0: nose, 11: left_shoulder, 12: right_shoulder
-// 13: left_elbow, 14: right_elbow
-// 15: left_wrist, 16: right_wrist
-// 23: left_hip, 24: right_hip
-// 25: left_knee, 26: right_knee
-// 27: left_ankle, 28: right_ankle
+// MediaPipe Pose Landmark 인덱스
+// 0: nose, 11/12: 어깨(left/right), 13/14: 팔꿈치
+// 15/16: 손목, 23/24: 엉덩이, 25/26: 무릎, 27/28: 발목
 
-/**
- * 각 포즈는 check(landmarks) 함수를 가짐
- * - landmarks: MediaPipe에서 반환하는 33개 관절 좌표 (정규화된 0~1)
- * - 반환: { pass: boolean, hint: string }
- */
-
-// 두 점 사이의 거리 (2D)
-function dist(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-// 세 점으로 이루는 각도 (b가 꼭지점, 단위: 도)
 function angle(a, b, c) {
   const ab = { x: a.x - b.x, y: a.y - b.y };
   const cb = { x: c.x - b.x, y: c.y - b.y };
   const dot = ab.x * cb.x + ab.y * cb.y;
   const magAB = Math.hypot(ab.x, ab.y);
   const magCB = Math.hypot(cb.x, cb.y);
+  if (magAB === 0 || magCB === 0) return 0;
   const cos = dot / (magAB * magCB);
   return (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
 }
 
-// 전신이 화면에 보이는지 확인
-function isBodyVisible(lm) {
-  const required = [0, 11, 12, 23, 24]; // 코, 양 어깨, 양 엉덩이
-  return required.every((i) => lm[i] && lm[i].visibility > 0.5);
+function isUpperBodyVisible(lm) {
+  const required = [0, 11, 12, 15, 16];
+  return required.every((i) => lm[i] && (lm[i].visibility ?? 1) > 0.3);
 }
 
 export const POSES = [
@@ -39,120 +23,121 @@ export const POSES = [
     id: "hands_up",
     name: "양손 머리 위로",
     emoji: "🙌",
-    instruction: "양손을 머리 위로 번쩍 들어올리세요",
+    instruction: "양손을 머리 위로 번쩍!",
     check: (lm) => {
-      if (!isBodyVisible(lm)) {
-        return { pass: false, hint: "전신이 보이도록 뒤로 물러나세요" };
+      if (!isUpperBodyVisible(lm)) {
+        return { pass: false, hint: "상체가 보이도록 서주세요", debug: "상체 가시성 부족" };
       }
       const nose = lm[0];
-      const leftWrist = lm[15];
-      const rightWrist = lm[16];
+      const lw = lm[15];
+      const rw = lm[16];
+      const margin = 0.05;
+      const leftUp = lw.y < nose.y + margin;
+      const rightUp = rw.y < nose.y + margin;
 
-      // 양 손목이 코보다 위에 있어야 함 (y 값이 작을수록 위)
-      const leftUp = leftWrist.y < nose.y;
-      const rightUp = rightWrist.y < nose.y;
+      const debug = `코y=${nose.y.toFixed(2)} L=${lw.y.toFixed(2)} R=${rw.y.toFixed(2)}`;
 
-      if (leftUp && rightUp) {
-        return { pass: true, hint: "좋아요! 유지하세요" };
-      }
-      if (!leftUp && !rightUp) {
-        return { pass: false, hint: "양손을 머리 위로 올려주세요" };
-      }
-      return {
-        pass: false,
-        hint: leftUp ? "오른손도 올려주세요" : "왼손도 올려주세요"
-      };
+      if (leftUp && rightUp) return { pass: true, hint: "좋아요! 유지!", debug };
+      if (!leftUp && !rightUp) return { pass: false, hint: "양손을 머리 위로!", debug };
+      return { pass: false, hint: "한 손 더 올려주세요", debug };
     }
   },
   {
     id: "t_pose",
     name: "T 포즈",
     emoji: "🤸",
-    instruction: "양팔을 좌우로 쭉 뻗어 T자를 만드세요",
+    instruction: "양팔을 좌우로 쭉! T자 모양",
     check: (lm) => {
-      if (!isBodyVisible(lm)) {
-        return { pass: false, hint: "전신이 보이도록 뒤로 물러나세요" };
+      if (!isUpperBodyVisible(lm)) {
+        return { pass: false, hint: "상체가 보이도록 서주세요", debug: "상체 가시성 부족" };
       }
       const ls = lm[11], rs = lm[12];
       const le = lm[13], re = lm[14];
       const lw = lm[15], rw = lm[16];
 
-      // 손목이 어깨와 비슷한 높이 (y 차이가 작음)
       const shoulderY = (ls.y + rs.y) / 2;
-      const leftLevel = Math.abs(lw.y - shoulderY) < 0.08;
-      const rightLevel = Math.abs(rw.y - shoulderY) < 0.08;
+      const leftLevel = Math.abs(lw.y - shoulderY) < 0.15;
+      const rightLevel = Math.abs(rw.y - shoulderY) < 0.15;
 
-      // 팔이 쭉 펴져 있어야 함 (어깨-팔꿈치-손목 각도가 160도 이상)
-      const leftArmStraight = angle(ls, le, lw) > 155;
-      const rightArmStraight = angle(rs, re, rw) > 155;
+      const leftArm = angle(ls, le, lw);
+      const rightArm = angle(rs, re, rw);
+      const leftStraight = leftArm > 140;
+      const rightStraight = rightArm > 140;
 
-      if (leftLevel && rightLevel && leftArmStraight && rightArmStraight) {
-        return { pass: true, hint: "완벽해요!" };
+      const debug = `Larm=${leftArm.toFixed(0)}° Rarm=${rightArm.toFixed(0)}° 어깨y=${shoulderY.toFixed(2)}`;
+
+      if (leftLevel && rightLevel && leftStraight && rightStraight) {
+        return { pass: true, hint: "완벽한 T!", debug };
       }
-      if (!leftArmStraight || !rightArmStraight) {
-        return { pass: false, hint: "팔을 쭉 펴주세요" };
+      if (!leftStraight || !rightStraight) {
+        return { pass: false, hint: "팔을 더 쭉 펴주세요", debug };
       }
-      return { pass: false, hint: "양팔을 어깨 높이로 수평하게" };
+      return { pass: false, hint: "팔을 어깨 높이로", debug };
     }
   },
   {
-    id: "right_hand_up",
-    name: "오른손 번쩍",
+    id: "one_hand_up",
+    name: "한 손만 올리기",
     emoji: "✋",
-    instruction: "오른손만 머리 위로 올리세요 (왼손은 내리고)",
+    instruction: "아무 손이나 하나만 머리 위로",
     check: (lm) => {
-      if (!isBodyVisible(lm)) {
-        return { pass: false, hint: "전신이 보이도록 뒤로 물러나세요" };
+      if (!isUpperBodyVisible(lm)) {
+        return { pass: false, hint: "상체가 보이도록 서주세요", debug: "상체 가시성 부족" };
       }
       const nose = lm[0];
-      const leftWrist = lm[15];
-      const rightWrist = lm[16];
-      const leftHip = lm[23];
-      const rightHip = lm[24];
+      const lw = lm[15];
+      const rw = lm[16];
+      const ls = lm[11];
+      const rs = lm[12];
 
-      // 주의: 사용자 입장에서 "오른손" = 화면에 보이는 왼쪽 = landmark 16(right_wrist)
-      // MediaPipe는 사람 몸 기준이므로 카메라가 거울모드라도 landmark는 사람 기준
-      const userRightWristUp = rightWrist.y < nose.y;
-      const userLeftWristDown = leftWrist.y > leftHip.y - 0.1;
+      const margin = 0.05;
+      const leftUp = lw.y < nose.y + margin;
+      const rightUp = rw.y < nose.y + margin;
+      const leftDown = lw.y > ls.y + 0.05;
+      const rightDown = rw.y > rs.y + 0.05;
 
-      if (userRightWristUp && userLeftWristDown) {
-        return { pass: true, hint: "좋아요!" };
+      const debug = `코y=${nose.y.toFixed(2)} L=${lw.y.toFixed(2)} R=${rw.y.toFixed(2)}`;
+
+      if ((leftUp && rightDown) || (rightUp && leftDown)) {
+        return { pass: true, hint: "좋아요!", debug };
       }
-      if (!userRightWristUp) {
-        return { pass: false, hint: "오른손을 더 높이 올려주세요" };
+      if (leftUp && rightUp) {
+        return { pass: false, hint: "한 손만! 다른 손은 내려요", debug };
       }
-      return { pass: false, hint: "왼손은 내려주세요" };
+      if (!leftUp && !rightUp) {
+        return { pass: false, hint: "한 손을 머리 위로!", debug };
+      }
+      return { pass: false, hint: "다른 손은 아래로", debug };
     }
   },
   {
-    id: "squat",
-    name: "스쿼트 자세",
-    emoji: "🦵",
-    instruction: "무릎을 굽혀 살짝 앉으세요",
+    id: "arms_cross",
+    name: "팔짱 끼기",
+    emoji: "🫂",
+    instruction: "가슴 앞에서 양팔을 교차해 팔짱",
     check: (lm) => {
-      if (!isBodyVisible(lm)) {
-        return { pass: false, hint: "전신이 보이도록 뒤로 물러나세요" };
+      if (!isUpperBodyVisible(lm)) {
+        return { pass: false, hint: "상체가 보이도록 서주세요", debug: "상체 가시성 부족" };
       }
-      const lh = lm[23], rh = lm[24];
-      const lk = lm[25], rk = lm[26];
-      const la = lm[27], ra = lm[28];
+      const ls = lm[11], rs = lm[12];
+      const lw = lm[15], rw = lm[16];
 
-      if (!la || !ra || la.visibility < 0.4 || ra.visibility < 0.4) {
-        return { pass: false, hint: "발목까지 전부 화면에 나오게 해주세요" };
-      }
+      const wristsDist = Math.hypot(lw.x - rw.x, lw.y - rw.y);
+      const wristsClose = wristsDist < 0.35;
 
-      // 무릎 각도가 굽혀져야 함 (170도 -> 서있음, 90도 -> 완전 앉음)
-      const leftKneeAngle = angle(lh, lk, la);
-      const rightKneeAngle = angle(rh, rk, ra);
-      const avgKneeAngle = (leftKneeAngle + rightKneeAngle) / 2;
+      const chestY = (ls.y + rs.y) / 2 + 0.1;
+      const leftAtChest = Math.abs(lw.y - chestY) < 0.25;
+      const rightAtChest = Math.abs(rw.y - chestY) < 0.25;
 
-      if (avgKneeAngle < 150 && avgKneeAngle > 70) {
-        return { pass: true, hint: "좋은 자세예요!" };
+      const debug = `손목거리=${wristsDist.toFixed(2)} 가슴y=${chestY.toFixed(2)}`;
+
+      if (wristsClose && leftAtChest && rightAtChest) {
+        return { pass: true, hint: "좋아요!", debug };
       }
-      if (avgKneeAngle >= 150) {
-        return { pass: false, hint: "무릎을 더 굽혀주세요" };
+      if (!leftAtChest || !rightAtChest) {
+        return { pass: false, hint: "손을 가슴 높이로", debug };
       }
-      return { pass: false, hint: "조금만 일어서주세요" };
+      return { pass: false, hint: "양손을 가슴 앞에서 모아주세요", debug };
     }
   }
 ];

@@ -46,13 +46,9 @@ body {
   opacity: 0;
   transition: opacity 0.3s ease;
 }
+.screen.active { display: flex; opacity: 1; }
 
-.screen.active {
-  display: flex;
-  opacity: 1;
-}
-
-/* ============ 시작 화면 ============ */
+/* ============ 시작 ============ */
 #startScreen {
   justify-content: center;
   align-items: center;
@@ -60,11 +56,7 @@ body {
   background: radial-gradient(ellipse at top, #2a1f4a 0%, var(--bg) 60%);
 }
 
-.start-content {
-  text-align: center;
-  max-width: 420px;
-  width: 100%;
-}
+.start-content { text-align: center; max-width: 420px; width: 100%; }
 
 .start-content h1 {
   font-size: clamp(2rem, 8vw, 3rem);
@@ -75,11 +67,7 @@ body {
   -webkit-text-fill-color: transparent;
 }
 
-.subtitle {
-  color: var(--text-dim);
-  font-size: 1rem;
-  margin-bottom: 32px;
-}
+.subtitle { color: var(--text-dim); font-size: 1rem; margin-bottom: 32px; }
 
 .info-box {
   background: var(--bg-elev);
@@ -88,12 +76,7 @@ body {
   margin-bottom: 32px;
   text-align: left;
 }
-
-.info-box p {
-  padding: 6px 0;
-  font-size: 0.95rem;
-  color: var(--text-dim);
-}
+.info-box p { padding: 6px 0; font-size: 0.95rem; color: var(--text-dim); }
 
 .primary-btn {
   width: 100%;
@@ -107,25 +90,14 @@ body {
   cursor: pointer;
   transition: transform 0.1s, background 0.2s;
 }
-
 .primary-btn:hover { background: var(--primary-hover); }
 .primary-btn:active { transform: scale(0.98); }
-.primary-btn:disabled {
-  background: #444;
-  cursor: not-allowed;
-  opacity: 0.6;
-}
+.primary-btn:disabled { background: #444; cursor: not-allowed; opacity: 0.6; }
 
-/* ============ 게임 화면 ============ */
-#gameScreen {
-  background: #000;
-}
+/* ============ 게임 ============ */
+#gameScreen { background: #000; }
 
-.top-bar {
-  padding: 12px 16px;
-  background: var(--bg);
-  z-index: 10;
-}
+.top-bar { padding: 12px 16px; background: var(--bg); z-index: 10; }
 
 .progress-info {
   display: flex;
@@ -134,16 +106,8 @@ body {
   margin-bottom: 8px;
   font-size: 0.9rem;
 }
-
-#stepLabel {
-  color: var(--primary);
-  font-weight: 600;
-}
-
-#poseName {
-  color: var(--text);
-  font-weight: 500;
-}
+#stepLabel { color: var(--primary); font-weight: 600; }
+#poseName { color: var(--text); font-weight: 500; }
 
 .progress-bar {
   width: 100%;
@@ -152,7 +116,6 @@ body {
   border-radius: 3px;
   overflow: hidden;
 }
-
 .progress-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--primary) 0%, var(--success) 100%);
@@ -173,9 +136,8 @@ video, canvas {
   left: 0;
   width: 100%;
   height: 100%;
-  transform: scaleX(-1); /* 거울모드 */
+  transform: scaleX(-1);
 }
-
 video { object-fit: cover; }
 
 .pose-guide {
@@ -192,41 +154,71 @@ video { object-fit: cover; }
   z-index: 5;
   max-width: calc(100% - 32px);
 }
+.pose-emoji { font-size: 2rem; line-height: 1; }
+.pose-instruction { font-size: 0.9rem; font-weight: 500; }
 
-.pose-emoji {
-  font-size: 2rem;
-  line-height: 1;
+/* ============ 디버그 패널 ============ */
+.debug-panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  z-index: 6;
+  max-width: 220px;
+  border: 1px solid rgba(124, 92, 255, 0.3);
+}
+.debug-panel.hidden { display: none; }
+
+.debug-row { padding: 2px 0; }
+.debug-row b { color: var(--primary); }
+.debug-ok { color: var(--success); }
+.debug-warn { color: var(--warning); }
+.debug-data { color: var(--text-dim); font-size: 10px; }
+
+.debug-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 6;
 }
 
-.pose-instruction {
-  font-size: 0.9rem;
-  font-weight: 500;
+.debug-btn {
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.7);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
 }
+.debug-btn:hover { background: rgba(124, 92, 255, 0.4); }
+.debug-btn:active { transform: scale(0.95); }
 
+/* ============ 타이머 ============ */
 .hold-timer {
   position: absolute;
-  bottom: 24px;
+  bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
   width: 80px;
   height: 80px;
   z-index: 5;
 }
-
 .hold-timer.hidden { display: none; }
-
-.hold-timer svg {
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg);
-}
-
-.timer-bg {
-  fill: rgba(0, 0, 0, 0.5);
-  stroke: rgba(255, 255, 255, 0.2);
-  stroke-width: 6;
-}
-
+.hold-timer svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.timer-bg { fill: rgba(0, 0, 0, 0.5); stroke: rgba(255, 255, 255, 0.2); stroke-width: 6; }
 .timer-fg {
   fill: none;
   stroke: var(--success);
@@ -236,7 +228,6 @@ video { object-fit: cover; }
   stroke-dashoffset: 283;
   transition: stroke-dashoffset 0.1s linear;
 }
-
 .timer-text {
   position: absolute;
   inset: 0;
@@ -248,6 +239,7 @@ video { object-fit: cover; }
   color: var(--success);
 }
 
+/* ============ 성공 ============ */
 .success-overlay {
   position: absolute;
   inset: 0;
@@ -259,9 +251,7 @@ video { object-fit: cover; }
   z-index: 8;
   animation: flashSuccess 0.8s ease;
 }
-
 .success-overlay.hidden { display: none; }
-
 .success-text {
   font-size: clamp(2rem, 10vw, 3.5rem);
   font-weight: 800;
@@ -275,12 +265,12 @@ video { object-fit: cover; }
   30% { opacity: 1; }
   100% { opacity: 0; }
 }
-
 @keyframes scaleIn {
   from { transform: scale(0.5); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
 
+/* ============ 로딩 ============ */
 .loading-overlay {
   position: absolute;
   inset: 0;
@@ -292,7 +282,6 @@ video { object-fit: cover; }
   z-index: 20;
   gap: 16px;
 }
-
 .loading-overlay.hidden { display: none; }
 
 .spinner {
@@ -303,10 +292,7 @@ video { object-fit: cover; }
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .bottom-bar {
   padding: 12px 16px;
@@ -316,45 +302,30 @@ video { object-fit: cover; }
   align-items: center;
   justify-content: center;
 }
-
-.feedback {
-  font-size: 0.9rem;
-  color: var(--text-dim);
-  text-align: center;
-}
-
+.feedback { font-size: 0.9rem; color: var(--text-dim); text-align: center; }
 .feedback.ok { color: var(--success); }
 .feedback.warn { color: var(--warning); }
 
-/* ============ 완료 화면 ============ */
+/* ============ 완료 ============ */
 #endScreen {
   justify-content: center;
   align-items: center;
   padding: 24px;
   background: radial-gradient(ellipse at top, #1f3a2e 0%, var(--bg) 60%);
 }
-
-.end-content {
-  text-align: center;
-  max-width: 420px;
-  width: 100%;
-}
+.end-content { text-align: center; max-width: 420px; width: 100%; }
 
 .celebration {
   font-size: 5rem;
   margin-bottom: 16px;
   animation: bounce 1s ease infinite;
 }
-
 @keyframes bounce {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-10px); }
 }
 
-.end-content h1 {
-  font-size: 2rem;
-  margin-bottom: 8px;
-}
+.end-content h1 { font-size: 2rem; margin-bottom: 8px; }
 
 .stats {
   display: grid;
@@ -362,21 +333,10 @@ video { object-fit: cover; }
   gap: 12px;
   margin: 24px 0;
 }
-
 .stat {
   background: var(--bg-elev);
   border-radius: 12px;
   padding: 16px;
 }
-
-.stat-label {
-  font-size: 0.85rem;
-  color: var(--text-dim);
-  margin-bottom: 4px;
-}
-
-.stat-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--success);
-}
+.stat-label { font-size: 0.85rem; color: var(--text-dim); margin-bottom: 4px; }
+.stat-value { font-size: 1.5rem; font-weight: 700; color: var(--success); }

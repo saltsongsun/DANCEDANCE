@@ -6,7 +6,7 @@ import {
 
 import { POSES } from "/poses.js";
 
-// ============ DOM 요소 ============
+// ============ DOM ============
 const startScreen = document.getElementById("startScreen");
 const gameScreen = document.getElementById("gameScreen");
 const endScreen = document.getElementById("endScreen");
@@ -29,6 +29,9 @@ const loadingOverlay = document.getElementById("loadingOverlay");
 const loadingText = document.getElementById("loadingText");
 const totalTimeEl = document.getElementById("totalTime");
 const totalPosesEl = document.getElementById("totalPoses");
+const debugPanel = document.getElementById("debugPanel");
+const debugToggle = document.getElementById("debugToggle");
+const skipBtn = document.getElementById("skipBtn");
 
 // ============ 상태 ============
 let poseLandmarker = null;
@@ -36,9 +39,13 @@ let running = false;
 let lastVideoTime = -1;
 let currentPoseIndex = 0;
 let holdStartTime = null;
-const HOLD_DURATION_MS = 1500; // 1.5초 유지
+const HOLD_DURATION_MS = 1000; // 1.0초로 단축
 let sessionStartTime = null;
 let stream = null;
+let debugVisible = true; // 디버그 기본 ON (문제 확인용)
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let fps = 0;
 
 // ============ 화면 전환 ============
 function showScreen(screen) {
@@ -46,7 +53,7 @@ function showScreen(screen) {
   screen.classList.add("active");
 }
 
-// ============ MediaPipe 초기화 ============
+// ============ MediaPipe ============
 async function initPoseLandmarker() {
   loadingText.textContent = "AI 모델 다운로드 중...";
   const vision = await FilesetResolver.forVisionTasks(
@@ -60,9 +67,9 @@ async function initPoseLandmarker() {
     },
     runningMode: "VIDEO",
     numPoses: 1,
-    minPoseDetectionConfidence: 0.5,
-    minPosePresenceConfidence: 0.5,
-    minTrackingConfidence: 0.5
+    minPoseDetectionConfidence: 0.4,
+    minPosePresenceConfidence: 0.4,
+    minTrackingConfidence: 0.4
   });
 }
 
@@ -94,7 +101,7 @@ function stopCamera() {
   }
 }
 
-// ============ 포즈 표시 업데이트 ============
+// ============ UI ============
 function updatePoseUI() {
   const pose = POSES[currentPoseIndex];
   stepLabel.textContent = `${currentPoseIndex + 1} / ${POSES.length}`;
@@ -104,7 +111,6 @@ function updatePoseUI() {
   progressFill.style.width = `${(currentPoseIndex / POSES.length) * 100}%`;
 }
 
-// ============ 홀드 타이머 ============
 function updateTimerUI(elapsedMs) {
   const ratio = Math.min(elapsedMs / HOLD_DURATION_MS, 1);
   const circumference = 283;
@@ -113,16 +119,12 @@ function updateTimerUI(elapsedMs) {
   timerText.textContent = remaining.toFixed(1);
 }
 
-function showTimer() {
-  holdTimer.classList.remove("hidden");
-}
-
+function showTimer() { holdTimer.classList.remove("hidden"); }
 function hideTimer() {
   holdTimer.classList.add("hidden");
   timerCircle.style.strokeDashoffset = 283;
 }
 
-// ============ 성공 처리 ============
 function showSuccessFlash() {
   successOverlay.classList.remove("hidden");
   setTimeout(() => successOverlay.classList.add("hidden"), 800);
@@ -133,7 +135,6 @@ function advancePose() {
   hideTimer();
   holdStartTime = null;
   currentPoseIndex++;
-
   if (currentPoseIndex >= POSES.length) {
     setTimeout(() => finishGame(), 900);
   } else {
@@ -154,38 +155,90 @@ function finishGame() {
   showScreen(endScreen);
 }
 
-// ============ 피드백 ============
 function setFeedback(text, type = "") {
   feedback.textContent = text;
   feedback.className = "feedback" + (type ? " " + type : "");
 }
 
+// ============ 디버그 패널 ============
+function updateDebugPanel(result, poseResult) {
+  if (!debugVisible) {
+    debugPanel.classList.add("hidden");
+    return;
+  }
+  debugPanel.classList.remove("hidden");
+
+  let html = `<div class="debug-row"><b>FPS:</b> ${fps}</div>`;
+  html += `<div class="debug-row"><b>현재 포즈:</b> ${POSES[currentPoseIndex]?.name || "-"}</div>`;
+
+  if (!result.landmarks || result.landmarks.length === 0) {
+    html += `<div class="debug-row debug-warn">❌ 사람 감지 안됨</div>`;
+  } else {
+    const lm = result.landmarks[0];
+    const nose = lm[0];
+    const ls = lm[11], rs = lm[12];
+    const lw = lm[15], rw = lm[16];
+
+    html += `<div class="debug-row debug-ok">✓ 랜드마크 33개 감지</div>`;
+    html += `<div class="debug-row"><b>주요 가시성(vis):</b></div>`;
+    html += `<div class="debug-row">코:${(nose.visibility ?? 1).toFixed(2)} L어깨:${(ls.visibility ?? 1).toFixed(2)} R어깨:${(rs.visibility ?? 1).toFixed(2)}</div>`;
+    html += `<div class="debug-row">L손목:${(lw.visibility ?? 1).toFixed(2)} R손목:${(rw.visibility ?? 1).toFixed(2)}</div>`;
+
+    if (poseResult) {
+      const statusClass = poseResult.pass ? "debug-ok" : "debug-warn";
+      html += `<div class="debug-row ${statusClass}"><b>판정:</b> ${poseResult.pass ? "✅ PASS" : "❌ FAIL"}</div>`;
+      html += `<div class="debug-row"><b>힌트:</b> ${poseResult.hint}</div>`;
+      if (poseResult.debug) {
+        html += `<div class="debug-row debug-data">${poseResult.debug}</div>`;
+      }
+    }
+
+    if (holdStartTime) {
+      const elapsed = performance.now() - holdStartTime;
+      html += `<div class="debug-row debug-ok"><b>홀드:</b> ${(elapsed / 1000).toFixed(2)}s / ${HOLD_DURATION_MS / 1000}s</div>`;
+    }
+  }
+
+  debugPanel.innerHTML = html;
+}
+
 // ============ 메인 루프 ============
 function predictLoop() {
   if (!running) return;
+
+  // FPS 계산
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    fps = frameCount;
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+
   if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const result = poseLandmarker.detectForVideo(video, performance.now());
-    handleDetection(result);
+    const poseResult = handleDetection(result);
     drawLandmarks(result);
+    updateDebugPanel(result, poseResult);
   }
   requestAnimationFrame(predictLoop);
 }
 
 function handleDetection(result) {
   if (!result.landmarks || result.landmarks.length === 0) {
-    setFeedback("사람이 감지되지 않아요. 카메라 앞에 서주세요", "warn");
+    setFeedback("사람이 감지되지 않아요", "warn");
     holdStartTime = null;
     hideTimer();
-    return;
+    return null;
   }
 
   const landmarks = result.landmarks[0];
   const pose = POSES[currentPoseIndex];
-  const { pass, hint } = pose.check(landmarks);
+  const poseResult = pose.check(landmarks);
 
-  if (pass) {
-    setFeedback(hint, "ok");
+  if (poseResult.pass) {
+    setFeedback(poseResult.hint, "ok");
     if (holdStartTime === null) {
       holdStartTime = performance.now();
       showTimer();
@@ -196,10 +249,11 @@ function handleDetection(result) {
       advancePose();
     }
   } else {
-    setFeedback(hint, "");
+    setFeedback(poseResult.hint, "");
     holdStartTime = null;
     hideTimer();
   }
+  return poseResult;
 }
 
 function drawLandmarks(result) {
@@ -230,9 +284,7 @@ async function startGame() {
   loadingOverlay.classList.remove("hidden");
 
   try {
-    if (!poseLandmarker) {
-      await initPoseLandmarker();
-    }
+    if (!poseLandmarker) await initPoseLandmarker();
     await initCamera();
     loadingOverlay.classList.add("hidden");
 
@@ -240,7 +292,7 @@ async function startGame() {
     holdStartTime = null;
     sessionStartTime = performance.now();
     updatePoseUI();
-    setFeedback("카메라 앞에 전신이 보이도록 서주세요", "");
+    setFeedback("카메라 앞에 서주세요", "");
     running = true;
     predictLoop();
   } catch (err) {
@@ -257,3 +309,18 @@ restartBtn.addEventListener("click", () => {
   showScreen(startScreen);
   startBtn.disabled = false;
 });
+
+// 디버그 토글
+if (debugToggle) {
+  debugToggle.addEventListener("click", () => {
+    debugVisible = !debugVisible;
+    debugToggle.textContent = debugVisible ? "🐛 Debug: ON" : "🐛 Debug: OFF";
+  });
+}
+
+// 건너뛰기 버튼 (디버깅용)
+if (skipBtn) {
+  skipBtn.addEventListener("click", () => {
+    if (running) advancePose();
+  });
+}
