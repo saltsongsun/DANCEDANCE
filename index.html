@@ -13,40 +13,72 @@
     <div id="startScreen" class="screen active">
       <div class="start-content">
         <h1>🕺 Dance Pose</h1>
-        <p class="subtitle">15가지 동작을 따라해보세요</p>
+        <p class="subtitle">춤을 카메라 앞에서 배워보세요</p>
+
+        <div class="mode-grid">
+          <button class="mode-card" data-mode="single">
+            <div class="mode-emoji">🎯</div>
+            <div class="mode-title">싱글 모드</div>
+            <div class="mode-desc">15개 포즈 · 하나씩 천천히</div>
+          </button>
+          <button class="mode-card" data-mode="sequence">
+            <div class="mode-emoji">💃</div>
+            <div class="mode-title">연속동작 모드</div>
+            <div class="mode-desc">짧은 루틴 · 박자에 맞춰</div>
+          </button>
+        </div>
+
         <div class="info-box">
           <p>📷 카메라 앞에 서서 시작합니다</p>
           <p>🙌 양손을 머리 위로 올리면 게임 시작!</p>
-          <p>🎯 각 포즈를 1초간 유지하면 통과</p>
-          <p>💡 상체가 전부 보이게, 한 발짝 뒤로!</p>
+          <p>💡 상체 전체가 보이도록 한 걸음 물러서기</p>
         </div>
-        <button id="startBtn" class="primary-btn">시작하기</button>
+      </div>
+    </div>
+
+    <!-- 시퀀스 선택 화면 -->
+    <div id="sequenceSelectScreen" class="screen">
+      <div class="start-content">
+        <button class="back-btn" id="backBtn1">← 뒤로</button>
+        <h2 class="section-title">루틴을 선택하세요</h2>
+        <div id="sequenceList" class="sequence-list"></div>
       </div>
     </div>
 
     <!-- 게임 화면 -->
     <div id="gameScreen" class="screen">
-      <div class="top-bar">
-        <div class="progress-info">
-          <span id="stepLabel">준비</span>
-          <span id="poseName">준비 중...</span>
+      <!-- 상단: 큰 미션 카드 -->
+      <div id="missionCard" class="mission-card">
+        <div class="mission-header">
+          <span id="stepLabel" class="mission-step">준비</span>
+          <span id="comboBadge" class="combo-badge hidden">🔥 <span id="comboCount">0</span> combo</span>
+        </div>
+        <div class="mission-body">
+          <div id="poseEmoji" class="mission-emoji">🙌</div>
+          <div class="mission-text-area">
+            <div id="poseName" class="mission-name">준비 중...</div>
+            <div id="poseInstruction" class="mission-instruction">카메라 앞에 서주세요</div>
+          </div>
         </div>
         <div class="progress-bar">
           <div id="progressFill" class="progress-fill"></div>
         </div>
       </div>
 
+      <!-- 비디오 영역 -->
       <div class="video-container">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="canvas"></canvas>
 
-        <!-- 포즈 가이드 -->
-        <div id="poseGuide" class="pose-guide">
-          <div id="poseEmoji" class="pose-emoji">🙌</div>
-          <div id="poseInstruction" class="pose-instruction">양손을 머리 위로 올리세요</div>
+        <!-- 연속동작 시퀀스 미리보기 (상단) -->
+        <div id="sequencePreview" class="sequence-preview hidden"></div>
+
+        <!-- 큰 카운트다운 (시퀀스 모드에서 각 스텝 제한시간) -->
+        <div id="stepCountdown" class="step-countdown hidden">
+          <div id="stepCountdownText" class="step-countdown-text">3.0</div>
         </div>
 
-        <!-- 준비 배너 (중앙 크게) -->
+        <!-- 준비 배너 -->
         <div id="readyBanner" class="ready-banner">
           <div class="ready-banner-inner">
             <div class="ready-icon">🙌</div>
@@ -55,15 +87,15 @@
         </div>
 
         <!-- 디버그 패널 -->
-        <div id="debugPanel" class="debug-panel"></div>
+        <div id="debugPanel" class="debug-panel hidden"></div>
 
         <!-- 디버그 컨트롤 -->
         <div class="debug-controls">
-          <button id="debugToggle" class="debug-btn">🐛 Debug: ON</button>
+          <button id="debugToggle" class="debug-btn">🐛 Debug</button>
           <button id="skipBtn" class="debug-btn">⏭ 건너뛰기</button>
         </div>
 
-        <!-- 타이머 원 -->
+        <!-- 홀드 타이머 -->
         <div id="holdTimer" class="hold-timer hidden">
           <svg viewBox="0 0 100 100">
             <circle class="timer-bg" cx="50" cy="50" r="45"></circle>
@@ -77,6 +109,11 @@
           <div class="success-text">✨ 성공! ✨</div>
         </div>
 
+        <!-- 실패 오버레이 (시퀀스 모드) -->
+        <div id="missOverlay" class="miss-overlay hidden">
+          <div class="miss-text">❌ Miss!</div>
+        </div>
+
         <!-- 로딩 오버레이 -->
         <div id="loadingOverlay" class="loading-overlay">
           <div class="spinner"></div>
@@ -84,6 +121,7 @@
         </div>
       </div>
 
+      <!-- 하단 피드백 -->
       <div class="bottom-bar">
         <div id="feedback" class="feedback">카메라 앞에 서주세요</div>
       </div>
@@ -94,17 +132,18 @@
       <div class="end-content">
         <div class="celebration">🎉</div>
         <h1>수고하셨어요!</h1>
-        <p class="subtitle">15개 포즈를 모두 완료했습니다</p>
+        <p id="endSubtitle" class="subtitle">완료했습니다</p>
         <div class="stats">
           <div class="stat">
             <div class="stat-label">소요 시간</div>
             <div id="totalTime" class="stat-value">0초</div>
           </div>
           <div class="stat">
-            <div class="stat-label">완료 포즈</div>
-            <div id="totalPoses" class="stat-value">0개</div>
+            <div class="stat-label">점수</div>
+            <div id="totalScore" class="stat-value">0점</div>
           </div>
         </div>
+        <div id="extraStats" class="extra-stats hidden"></div>
         <button id="restartBtn" class="primary-btn">다시 하기</button>
       </div>
     </div>
