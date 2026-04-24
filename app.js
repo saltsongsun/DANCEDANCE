@@ -18,7 +18,6 @@ const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
-// 미션 카드
 const stepLabel = document.getElementById("stepLabel");
 const poseName = document.getElementById("poseName");
 const poseEmoji = document.getElementById("poseEmoji");
@@ -27,7 +26,6 @@ const progressFill = document.getElementById("progressFill");
 const comboBadge = document.getElementById("comboBadge");
 const comboCount = document.getElementById("comboCount");
 
-// 오버레이
 const feedback = document.getElementById("feedback");
 const holdTimer = document.getElementById("holdTimer");
 const timerCircle = document.getElementById("timerCircle");
@@ -39,21 +37,45 @@ const loadingText = document.getElementById("loadingText");
 const readyBanner = document.getElementById("readyBanner");
 const readyBannerText = document.getElementById("readyBannerText");
 
-// 시퀀스 UI
 const sequencePreview = document.getElementById("sequencePreview");
 const stepCountdown = document.getElementById("stepCountdown");
 const stepCountdownText = document.getElementById("stepCountdownText");
 
-// 완료
 const totalTimeEl = document.getElementById("totalTime");
 const totalScoreEl = document.getElementById("totalScore");
 const endSubtitle = document.getElementById("endSubtitle");
 const extraStats = document.getElementById("extraStats");
 
-// 디버그
 const debugPanel = document.getElementById("debugPanel");
 const debugToggle = document.getElementById("debugToggle");
 const skipBtn = document.getElementById("skipBtn");
+
+// ============ 정확도 설정 ============
+const ACCURACY_CONFIG = {
+  // 모델 종류: 'lite' | 'full' | 'heavy'
+  // full: 9MB, 높은 정확도 (권장)
+  // heavy: 30MB, 최고 정확도 (빠른 PC/WiFi 필요)
+  // lite: 3MB, 빠름 (저사양)
+  modelType: 'full',
+
+  // EMA 스무딩 계수 (0~1, 높을수록 부드럽지만 반응 느림)
+  smoothingFactor: 0.6,
+
+  // 프레임 투표: 최근 N 프레임 중 과반이 PASS여야 진짜 PASS
+  voteFrames: 5,
+  voteThreshold: 3, // 5프레임 중 3프레임 PASS면 인정 (60%)
+
+  // MediaPipe 신뢰도 (조금 높임 → 더 확실한 감지만)
+  minDetectionConfidence: 0.6,
+  minPresenceConfidence: 0.6,
+  minTrackingConfidence: 0.6
+};
+
+const MODEL_URLS = {
+  lite: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+  full: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task",
+  heavy: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task"
+};
 
 // ============ 상태 ============
 let poseLandmarker = null;
@@ -66,25 +88,64 @@ let lastFpsTime = performance.now();
 let fps = 0;
 
 // 모드 & 단계
-let mode = null; // "single" | "sequence"
-let phase = "ready"; // "ready" | "playing" | "done"
+let mode = null;
+let phase = "ready";
 let sessionStartTime = null;
 
-// 싱글 모드
+// 싱글
 const HOLD_DURATION_MS = 1000;
 const READY_HOLD_MS = 800;
 let currentPoseIndex = 0;
 let holdStartTime = null;
 
-// 시퀀스 모드
+// 시퀀스
 let selectedSequence = null;
 let seqStepIndex = 0;
-let seqStepStartTime = null; // 현재 스텝 시작 시각
-let seqStepHeldSince = null; // 이 스텝의 포즈가 통과되기 시작한 시각
+let seqStepStartTime = null;
+let seqStepHeldSince = null;
 let seqCombo = 0;
+let seqMaxCombo = 0;
 let seqScore = 0;
 let seqSuccessCount = 0;
 let seqMissCount = 0;
+
+// ============ EMA 스무딩 ============
+// 이전 프레임의 좌표를 저장하여 새 좌표와 가중평균
+let smoothedLandmarks = null;
+let smoothedWorldLandmarks = null;
+
+function smoothLandmarks(current, prev, factor) {
+  if (!prev || prev.length !== current.length) {
+    // 첫 프레임은 그대로
+    return current.map((p) => ({ ...p }));
+  }
+  return current.map((p, i) => {
+    const prevP = prev[i];
+    return {
+      x: prevP.x * factor + p.x * (1 - factor),
+      y: prevP.y * factor + p.y * (1 - factor),
+      z: (prevP.z ?? 0) * factor + (p.z ?? 0) * (1 - factor),
+      visibility: Math.max(prevP.visibility ?? 0, p.visibility ?? 0)
+    };
+  });
+}
+
+// ============ 프레임 투표 (히스테리시스) ============
+// 최근 N 프레임의 PASS/FAIL 기록으로 안정화
+const voteHistory = [];
+
+function voteAndDecide(currentPass) {
+  voteHistory.push(currentPass);
+  if (voteHistory.length > ACCURACY_CONFIG.voteFrames) {
+    voteHistory.shift();
+  }
+  const passCount = voteHistory.filter((v) => v).length;
+  return passCount >= ACCURACY_CONFIG.voteThreshold;
+}
+
+function resetVote() {
+  voteHistory.length = 0;
+}
 
 // ============ 화면 전환 ============
 function showScreen(screen) {
@@ -94,21 +155,20 @@ function showScreen(screen) {
 
 // ============ MediaPipe ============
 async function initPoseLandmarker() {
-  loadingText.textContent = "AI 모델 다운로드 중...";
+  loadingText.textContent = `AI 모델(${ACCURACY_CONFIG.modelType}) 다운로드 중...`;
   const vision = await FilesetResolver.forVisionTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/wasm"
   );
   poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
     baseOptions: {
-      modelAssetPath:
-        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+      modelAssetPath: MODEL_URLS[ACCURACY_CONFIG.modelType],
       delegate: "GPU"
     },
     runningMode: "VIDEO",
     numPoses: 1,
-    minPoseDetectionConfidence: 0.4,
-    minPosePresenceConfidence: 0.4,
-    minTrackingConfidence: 0.4
+    minPoseDetectionConfidence: ACCURACY_CONFIG.minDetectionConfidence,
+    minPosePresenceConfidence: ACCURACY_CONFIG.minPresenceConfidence,
+    minTrackingConfidence: ACCURACY_CONFIG.minTrackingConfidence
   });
 }
 
@@ -139,7 +199,7 @@ function stopCamera() {
   }
 }
 
-// ============ UI 업데이트 ============
+// ============ UI ============
 function updateMissionCard(pose, stepText) {
   poseName.textContent = pose.name;
   poseEmoji.textContent = pose.emoji;
@@ -186,12 +246,8 @@ function renderSequencePreview() {
     dot.className = "seq-dot";
     const pose = POSE_LIBRARY[stepId];
     dot.textContent = pose.emoji;
-    if (i < seqStepIndex) {
-      // 이전 스텝 - done 또는 miss 표시는 나중에 세분화 가능
-      dot.classList.add("done");
-    } else if (i === seqStepIndex) {
-      dot.classList.add("current");
-    }
+    if (i < seqStepIndex) dot.classList.add("done");
+    else if (i === seqStepIndex) dot.classList.add("current");
     sequencePreview.appendChild(dot);
   });
 }
@@ -240,6 +296,7 @@ function startMainGame() {
   sessionStartTime = performance.now();
   hideReadyBanner();
   showSuccessFlash("🎬 시작!");
+  resetVote();
 
   if (mode === "single") {
     currentPoseIndex = 0;
@@ -249,6 +306,7 @@ function startMainGame() {
     seqStepStartTime = performance.now();
     seqStepHeldSince = null;
     seqCombo = 0;
+    seqMaxCombo = 0;
     seqScore = 0;
     seqSuccessCount = 0;
     seqMissCount = 0;
@@ -264,11 +322,11 @@ function startMainGame() {
   }, 900);
 }
 
-// 싱글 모드: 다음 포즈로
 function advancePoseSingle() {
   showSuccessFlash();
   hideTimer();
   holdStartTime = null;
+  resetVote();
   currentPoseIndex++;
   if (currentPoseIndex >= POSES.length) {
     setTimeout(() => finishGame(), 800);
@@ -280,12 +338,11 @@ function advancePoseSingle() {
   }
 }
 
-// 시퀀스 모드: 한 스텝 성공
 function advanceStepSeq(success) {
   if (success) {
     seqSuccessCount++;
     seqCombo++;
-    // 점수: 기본 + 콤보 보너스
+    if (seqCombo > seqMaxCombo) seqMaxCombo = seqCombo;
     const basePoint = 100;
     const comboBonus = seqCombo * 20;
     seqScore += basePoint + comboBonus;
@@ -298,6 +355,7 @@ function advanceStepSeq(success) {
 
   seqStepHeldSince = null;
   seqStepIndex++;
+  resetVote();
 
   if (seqStepIndex >= selectedSequence.steps.length) {
     stepCountdown.classList.add("hidden");
@@ -331,24 +389,23 @@ function finishGame() {
     extraStats.innerHTML = `
       ✅ 성공: <b>${seqSuccessCount} / ${total}</b><br>
       ❌ 놓침: <b>${seqMissCount}</b><br>
-      🔥 최고 콤보: <b>${seqCombo}</b>
+      🔥 최고 콤보: <b>${seqMaxCombo}</b>
     `;
     progressFill.style.width = "100%";
   }
-
   showScreen(endScreen);
 }
 
 // ============ 디버그 ============
-function updateDebugPanel(result, poseResult) {
+function updateDebugPanel(result, poseResult, votedPass) {
   if (!debugVisible) {
     debugPanel.classList.add("hidden");
     return;
   }
   debugPanel.classList.remove("hidden");
 
-  let html = `<div class="debug-row"><b>FPS:</b> ${fps} <b>Mode:</b> ${mode || "-"}</div>`;
-  html += `<div class="debug-row"><b>Phase:</b> ${phase}</div>`;
+  let html = `<div class="debug-row"><b>FPS:</b> ${fps} <b>Model:</b> ${ACCURACY_CONFIG.modelType}</div>`;
+  html += `<div class="debug-row"><b>Phase:</b> ${phase} <b>Mode:</b> ${mode || "-"}</div>`;
 
   let currentPose = null;
   if (phase === "ready") currentPose = READY_POSE;
@@ -359,19 +416,19 @@ function updateDebugPanel(result, poseResult) {
   if (!result.landmarks || result.landmarks.length === 0) {
     html += `<div class="debug-row debug-warn">❌ 사람 감지 안됨</div>`;
   } else {
-    const lm = result.landmarks[0];
-    html += `<div class="debug-row debug-ok">✓ 감지됨</div>`;
+    html += `<div class="debug-row debug-ok">✓ 감지됨 (스무딩 ON)</div>`;
     if (poseResult) {
-      const cls = poseResult.pass ? "debug-ok" : "debug-warn";
-      html += `<div class="debug-row ${cls}">${poseResult.pass ? "✅ PASS" : "❌ FAIL"} - ${poseResult.hint}</div>`;
+      const rawCls = poseResult.pass ? "debug-ok" : "debug-warn";
+      const voteCls = votedPass ? "debug-ok" : "debug-warn";
+      html += `<div class="debug-row ${rawCls}">Raw: ${poseResult.pass ? "✅" : "❌"} ${poseResult.hint}</div>`;
+      html += `<div class="debug-row ${voteCls}">Vote: ${votedPass ? "✅" : "❌"} (${voteHistory.filter(v=>v).length}/${voteHistory.length})</div>`;
       if (poseResult.debug) {
         html += `<div class="debug-row debug-data">${poseResult.debug}</div>`;
       }
     }
     if (mode === "sequence" && phase === "playing" && seqStepStartTime) {
       const elapsed = performance.now() - seqStepStartTime;
-      const window = selectedSequence.stepWindowMs;
-      html += `<div class="debug-row"><b>Window:</b> ${(elapsed / 1000).toFixed(1)}s / ${(window / 1000).toFixed(1)}s</div>`;
+      html += `<div class="debug-row"><b>Window:</b> ${(elapsed/1000).toFixed(1)}/${(selectedSequence.stepWindowMs/1000).toFixed(1)}s</div>`;
       html += `<div class="debug-row"><b>Combo:</b> ${seqCombo} <b>Score:</b> ${seqScore}</div>`;
     }
   }
@@ -392,15 +449,35 @@ function predictLoop() {
   if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const result = poseLandmarker.detectForVideo(video, performance.now());
-    const poseResult = handleDetection(result);
+
+    // 스무딩 적용
+    if (result.landmarks && result.landmarks.length > 0) {
+      smoothedLandmarks = smoothLandmarks(
+        result.landmarks[0],
+        smoothedLandmarks,
+        ACCURACY_CONFIG.smoothingFactor
+      );
+      if (result.worldLandmarks && result.worldLandmarks.length > 0) {
+        smoothedWorldLandmarks = smoothLandmarks(
+          result.worldLandmarks[0],
+          smoothedWorldLandmarks,
+          ACCURACY_CONFIG.smoothingFactor
+        );
+      }
+    } else {
+      // 감지 실패 - 이전 스무딩 초기화
+      smoothedLandmarks = null;
+      smoothedWorldLandmarks = null;
+    }
+
+    const { poseResult, votedPass } = handleDetection(result);
     drawLandmarks(result);
-    updateDebugPanel(result, poseResult);
+    updateDebugPanel(result, poseResult, votedPass);
   }
   requestAnimationFrame(predictLoop);
 }
 
 function handleDetection(result) {
-  // 사람 감지 안됨
   if (!result.landmarks || result.landmarks.length === 0) {
     if (phase === "ready") showReadyBanner("카메라 앞에 서주세요 👀");
     setFeedback("사람이 감지되지 않아요", "warn");
@@ -408,22 +485,24 @@ function handleDetection(result) {
       holdStartTime = null;
       hideTimer();
     }
-    return null;
+    resetVote();
+    return { poseResult: null, votedPass: false };
   }
 
-  const landmarks = result.landmarks[0];
+  // 스무딩된 좌표 사용
+  const landmarks = smoothedLandmarks || result.landmarks[0];
+  const worldLandmarks = smoothedWorldLandmarks || result.worldLandmarks?.[0] || null;
 
   // 준비 단계
   if (phase === "ready") {
-    const readyResult = READY_POSE.check(landmarks);
-    if (!readyResult.pass) {
-      showReadyBanner("양손을 머리 위로 올리면 시작 🙌");
-    } else {
-      showReadyBanner("좋아요! 유지하세요 ✨");
-    }
+    const rawResult = READY_POSE.check(landmarks, worldLandmarks);
+    const votedPass = voteAndDecide(rawResult.pass);
 
-    if (readyResult.pass) {
-      setFeedback(readyResult.hint, "ok");
+    if (!votedPass) showReadyBanner("양손을 머리 위로 올리면 시작 🙌");
+    else showReadyBanner("좋아요! 유지하세요 ✨");
+
+    if (votedPass) {
+      setFeedback(rawResult.hint, "ok");
       if (holdStartTime === null) {
         holdStartTime = performance.now();
         showTimer();
@@ -435,19 +514,21 @@ function handleDetection(result) {
         startMainGame();
       }
     } else {
-      setFeedback(readyResult.hint, "");
+      setFeedback(rawResult.hint, "");
       holdStartTime = null;
       hideTimer();
     }
-    return readyResult;
+    return { poseResult: rawResult, votedPass };
   }
 
-  // 본게임 - 싱글 모드
+  // 싱글 모드
   if (mode === "single") {
     const pose = POSES[currentPoseIndex];
-    const r = pose.check(landmarks);
-    if (r.pass) {
-      setFeedback(r.hint, "ok");
+    const rawResult = pose.check(landmarks, worldLandmarks);
+    const votedPass = voteAndDecide(rawResult.pass);
+
+    if (votedPass) {
+      setFeedback(rawResult.hint, "ok");
       if (holdStartTime === null) {
         holdStartTime = performance.now();
         showTimer();
@@ -456,50 +537,46 @@ function handleDetection(result) {
       updateTimerUI(elapsed, HOLD_DURATION_MS);
       if (elapsed >= HOLD_DURATION_MS) advancePoseSingle();
     } else {
-      setFeedback(r.hint, "");
+      setFeedback(rawResult.hint, "");
       holdStartTime = null;
       hideTimer();
     }
-    return r;
+    return { poseResult: rawResult, votedPass };
   }
 
-  // 본게임 - 시퀀스 모드
+  // 시퀀스 모드
   if (mode === "sequence") {
     const stepId = selectedSequence.steps[seqStepIndex];
     const pose = POSE_LIBRARY[stepId];
-    const r = pose.check(landmarks);
+    const rawResult = pose.check(landmarks, worldLandmarks);
+    const votedPass = voteAndDecide(rawResult.pass);
 
-    // 시간 체크
     const windowElapsed = performance.now() - seqStepStartTime;
     const windowRemain = selectedSequence.stepWindowMs - windowElapsed;
-
-    // 카운트다운 표시
     stepCountdownText.textContent = Math.max(0, windowRemain / 1000).toFixed(1);
 
     if (windowRemain <= 0) {
-      // 시간 초과 → 미스
       advanceStepSeq(false);
-      return r;
+      return { poseResult: rawResult, votedPass };
     }
 
-    if (r.pass) {
-      setFeedback(r.hint, "ok");
+    if (votedPass) {
+      setFeedback(rawResult.hint, "ok");
       if (seqStepHeldSince === null) {
         seqStepHeldSince = performance.now();
       }
       const heldFor = performance.now() - seqStepHeldSince;
       if (heldFor >= selectedSequence.stepHoldMs) {
-        // 스텝 성공
         advanceStepSeq(true);
       }
     } else {
       seqStepHeldSince = null;
-      setFeedback(r.hint, "");
+      setFeedback(rawResult.hint, "");
     }
-    return r;
+    return { poseResult: rawResult, votedPass };
   }
 
-  return null;
+  return { poseResult: null, votedPass: false };
 }
 
 function drawLandmarks(result) {
@@ -507,18 +584,18 @@ function drawLandmarks(result) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (result.landmarks && result.landmarks.length > 0) {
     const drawingUtils = new DrawingUtils(ctx);
-    for (const landmarks of result.landmarks) {
-      drawingUtils.drawLandmarks(landmarks, { radius: 5, color: "#7c5cff", lineWidth: 2 });
-      drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, {
-        color: "#00ffa3",
-        lineWidth: 3
-      });
-    }
+    // 스무딩된 좌표로 그려서 시각적으로도 부드럽게
+    const toDraw = smoothedLandmarks || result.landmarks[0];
+    drawingUtils.drawLandmarks(toDraw, { radius: 5, color: "#7c5cff", lineWidth: 2 });
+    drawingUtils.drawConnectors(toDraw, PoseLandmarker.POSE_CONNECTIONS, {
+      color: "#00ffa3",
+      lineWidth: 3
+    });
   }
   ctx.restore();
 }
 
-// ============ 시퀀스 목록 렌더 ============
+// ============ 시퀀스 목록 ============
 function renderSequenceList() {
   sequenceList.innerHTML = "";
   SEQUENCES.forEach((seq) => {
@@ -546,7 +623,6 @@ async function startGame() {
   showScreen(gameScreen);
   loadingOverlay.classList.remove("hidden");
 
-  // 시퀀스 모드라면 미리보기 표시
   if (mode === "sequence") {
     sequencePreview.classList.remove("hidden");
     renderSequencePreview();
@@ -564,6 +640,9 @@ async function startGame() {
     currentPoseIndex = 0;
     seqStepIndex = 0;
     holdStartTime = null;
+    smoothedLandmarks = null;
+    smoothedWorldLandmarks = null;
+    resetVote();
     updatePoseUI();
     showReadyBanner("카메라 앞에 서주세요 👀");
     setFeedback("양손을 머리 위로 올려 시작!", "");
@@ -595,7 +674,6 @@ document.querySelectorAll(".mode-card").forEach((btn) => {
 backBtn1.addEventListener("click", () => showScreen(startScreen));
 
 restartBtn.addEventListener("click", () => {
-  // 상태 초기화
   mode = null;
   selectedSequence = null;
   phase = "ready";
