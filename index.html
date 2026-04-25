@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#0f0f14" />
-  <title>🕺 Dance Pose - 춤 배우기</title>
+  <title>🕺 Dance Pose</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -13,57 +13,110 @@
     <div id="startScreen" class="screen active">
       <div class="start-content">
         <h1>🕺 Dance Pose</h1>
-        <p class="subtitle">춤을 카메라 앞에서 배워보세요</p>
+        <p class="subtitle">나만의 춤 동작을 만들어보세요</p>
 
         <div class="mode-grid">
-          <button class="mode-card" data-mode="single">
-            <div class="mode-emoji">🎯</div>
-            <div class="mode-title">싱글 모드</div>
-            <div class="mode-desc">15개 포즈 · 하나씩</div>
+          <button class="mode-card mode-card-wide" data-mode="record">
+            <div class="mode-emoji">🎥</div>
+            <div class="mode-title">새 동작 녹화</div>
+            <div class="mode-desc">5초 카운트다운 후 내 자세를 저장</div>
           </button>
-          <button class="mode-card" data-mode="sequence">
+          <button class="mode-card mode-card-wide" data-mode="sequence">
             <div class="mode-emoji">💃</div>
-            <div class="mode-title">연속동작 모드</div>
-            <div class="mode-desc">루틴 따라하기</div>
-          </button>
-          <button class="mode-card mode-card-wide" data-mode="builder">
-            <div class="mode-emoji">🎬</div>
-            <div class="mode-title">내 루틴 만들기</div>
-            <div class="mode-desc">동작 골라서 나만의 시퀀스 저장</div>
+            <div class="mode-title">루틴 만들고 따라하기</div>
+            <div class="mode-desc">저장된 동작들로 시퀀스 만들기</div>
           </button>
         </div>
 
         <div class="info-box">
-          <p>📷 카메라 앞에 서서 시작합니다</p>
-          <p>🙌 양손을 머리 위로 올리면 게임 시작!</p>
-          <p>💡 상체 전체가 보이도록 한 걸음 물러서기</p>
+          <p>📷 카메라 앞에 서서 동작을 녹화하세요</p>
+          <p>📝 이름과 설명을 직접 입력</p>
+          <p>💃 여러 동작을 이어서 루틴으로 만들기</p>
         </div>
       </div>
     </div>
 
-    <!-- 시퀀스 선택 화면 -->
-    <div id="sequenceSelectScreen" class="screen">
-      <div class="start-content">
+    <!-- 동작 녹화 화면 -->
+    <div id="recordScreen" class="screen">
+      <div class="record-top">
         <button class="back-btn" data-back="start">← 뒤로</button>
-        <h2 class="section-title">루틴을 선택하세요</h2>
+        <h2 class="record-title">새 동작 녹화</h2>
+      </div>
 
-        <div class="section-label">기본 루틴</div>
-        <div id="sequenceList" class="sequence-list"></div>
+      <div class="record-video-container">
+        <video id="recordVideo" autoplay playsinline muted></video>
+        <canvas id="recordCanvas"></canvas>
 
-        <div id="myRoutinesSection" class="hidden">
-          <div class="section-label">내 루틴</div>
-          <div id="myRoutinesList" class="sequence-list"></div>
+        <!-- 5초 카운트다운 오버레이 -->
+        <div id="recordCountdown" class="record-countdown hidden">
+          <div id="recordCountdownNumber" class="record-countdown-number">5</div>
+          <div class="record-countdown-text">자세를 잡으세요!</div>
         </div>
+
+        <!-- 캡쳐 플래시 -->
+        <div id="captureFlash" class="capture-flash hidden"></div>
+
+        <!-- 로딩 -->
+        <div id="recordLoadingOverlay" class="loading-overlay">
+          <div class="spinner"></div>
+          <div id="recordLoadingText">카메라 준비 중...</div>
+        </div>
+
+        <!-- 캡쳐된 포즈 결과 (정규화된 스켈레톤 표시) -->
+        <div id="capturedPreview" class="captured-preview hidden">
+          <svg id="capturedSvg" viewBox="-2 -2 4 4" class="captured-svg"></svg>
+          <div class="captured-label">✨ 동작이 캡쳐되었어요!</div>
+        </div>
+      </div>
+
+      <!-- 입력 폼 -->
+      <div class="record-form" id="recordForm">
+        <div class="form-row">
+          <button id="recordBtn" class="record-btn">
+            <span class="record-btn-icon">🔴</span>
+            <span class="record-btn-text">5초 후 녹화</span>
+          </button>
+        </div>
+
+        <div id="recordFormFields" class="form-fields hidden">
+          <div class="form-field">
+            <label>동작 이름</label>
+            <input type="text" id="customName" placeholder="예: 내 시그니처 무브" maxlength="20" />
+          </div>
+
+          <div class="form-field">
+            <label>이모지 선택</label>
+            <div id="emojiPicker" class="emoji-picker"></div>
+          </div>
+
+          <div class="form-field">
+            <label>동작 설명 (어떻게 하는 동작인지)</label>
+            <textarea id="customInstruction" placeholder="예: 양손을 비스듬히 위로 올려요" rows="2" maxlength="60"></textarea>
+          </div>
+
+          <div class="form-buttons">
+            <button id="recordRetryBtn" class="builder-btn-secondary">다시 녹화</button>
+            <button id="recordSaveBtn" class="primary-btn" disabled>저장</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 저장된 내 동작 목록 -->
+      <div class="saved-poses-section">
+        <div class="saved-poses-header">
+          <h3>저장된 내 동작 <span id="savedPoseCount" class="count-badge">0</span></h3>
+        </div>
+        <div id="savedPosesList" class="saved-poses-grid"></div>
       </div>
     </div>
 
-    <!-- 루틴 빌더 화면 -->
-    <div id="builderScreen" class="screen">
+    <!-- 시퀀스/루틴 화면 -->
+    <div id="sequenceSelectScreen" class="screen">
       <div class="start-content">
         <button class="back-btn" data-back="start">← 뒤로</button>
         <h2 class="section-title">루틴 만들기</h2>
 
-        <!-- 현재 만들고 있는 루틴 -->
+        <!-- 빌더 -->
         <div class="builder-current">
           <div class="builder-current-label">내 시퀀스 <span id="builderStepCount">(0개)</span></div>
           <div id="builderSteps" class="builder-steps">
@@ -73,31 +126,41 @@
             <input type="text" id="routineName" class="routine-name-input" placeholder="루틴 이름 (예: 내 댄스)" maxlength="20" />
             <div class="builder-buttons">
               <button id="builderClearBtn" class="builder-btn-secondary">초기화</button>
-              <button id="builderSaveBtn" class="primary-btn" disabled>저장</button>
+              <button id="builderPlayBtn" class="primary-btn" disabled>▶ 따라하기</button>
+            </div>
+            <div class="builder-buttons">
+              <button id="builderSaveBtn" class="builder-btn-secondary" disabled>💾 루틴 저장</button>
             </div>
             <div class="builder-difficulty">
-              <span class="builder-diff-label">난이도:</span>
-              <button class="diff-btn active" data-diff="easy">쉬움</button>
+              <span class="builder-diff-label">속도:</span>
+              <button class="diff-btn active" data-diff="easy">느리게</button>
               <button class="diff-btn" data-diff="medium">보통</button>
-              <button class="diff-btn" data-diff="hard">어려움</button>
+              <button class="diff-btn" data-diff="hard">빠르게</button>
             </div>
           </div>
         </div>
 
-        <div class="section-label">동작 라이브러리</div>
-        <div id="poseLibraryGrid" class="pose-library-grid"></div>
+        <!-- 동작 라이브러리 (내 동작 + 기본) -->
+        <div class="section-label">내 동작 (탭하여 추가)</div>
+        <div id="myPosesGrid" class="pose-library-grid"></div>
+        <div id="myPosesEmpty" class="pose-empty">
+          저장된 동작이 없어요. <br>
+          <button class="link-btn" data-mode="record">새 동작 녹화하기 →</button>
+        </div>
 
-        <!-- 저장된 루틴 목록 -->
+        <div class="section-label">기본 동작</div>
+        <div id="defaultPosesGrid" class="pose-library-grid"></div>
+
+        <!-- 저장된 루틴 -->
         <div id="savedRoutinesSection" class="hidden">
           <div class="section-label">저장된 내 루틴</div>
-          <div id="savedRoutinesList" class="saved-routines-list"></div>
+          <div id="savedRoutinesList" class="sequence-list"></div>
         </div>
       </div>
     </div>
 
     <!-- 게임 화면 -->
     <div id="gameScreen" class="screen">
-      <!-- 미션 카드 -->
       <div id="missionCard" class="mission-card">
         <div class="mission-header">
           <span id="stepLabel" class="mission-step">준비</span>
@@ -115,20 +178,16 @@
         </div>
       </div>
 
-      <!-- 비디오 -->
       <div class="video-container">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="canvas"></canvas>
 
-        <!-- 시퀀스 미리보기 -->
         <div id="sequencePreview" class="sequence-preview hidden"></div>
 
-        <!-- 큰 카운트다운 (시퀀스 스텝 제한시간) -->
         <div id="stepCountdown" class="step-countdown hidden">
           <div id="stepCountdownText" class="step-countdown-text">3.0</div>
         </div>
 
-        <!-- 준비 배너 -->
         <div id="readyBanner" class="ready-banner">
           <div class="ready-banner-inner">
             <div class="ready-icon">🙌</div>
@@ -136,7 +195,7 @@
           </div>
         </div>
 
-        <!-- 큰 미션 미리보기 (3..2..1 카운트다운) -->
+        <!-- 미션 미리보기 (3..2..1) -->
         <div id="missionPreview" class="mission-preview hidden">
           <div class="mission-preview-inner">
             <div id="previewEmoji" class="preview-emoji">🙌</div>
@@ -146,16 +205,13 @@
           </div>
         </div>
 
-        <!-- 디버그 -->
         <div id="debugPanel" class="debug-panel hidden"></div>
 
-        <!-- 컨트롤 -->
         <div class="debug-controls">
-          <button id="debugToggle" class="debug-btn">🐛 Debug: ON</button>
+          <button id="debugToggle" class="debug-btn">🐛 Debug</button>
           <button id="skipBtn" class="debug-btn">⏭ 건너뛰기</button>
         </div>
 
-        <!-- 홀드 타이머 -->
         <div id="holdTimer" class="hold-timer hidden">
           <svg viewBox="0 0 100 100">
             <circle class="timer-bg" cx="50" cy="50" r="45"></circle>
@@ -181,7 +237,7 @@
       </div>
     </div>
 
-    <!-- 완료 화면 -->
+    <!-- 완료 -->
     <div id="endScreen" class="screen">
       <div class="end-content">
         <div class="celebration">🎉</div>
@@ -198,7 +254,7 @@
           </div>
         </div>
         <div id="extraStats" class="extra-stats hidden"></div>
-        <button id="restartBtn" class="primary-btn">다시 하기</button>
+        <button id="restartBtn" class="primary-btn">처음으로</button>
       </div>
     </div>
   </div>
