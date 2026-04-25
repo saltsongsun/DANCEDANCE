@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0f0f14" />
+  <title>🕺 Dance Pose</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- 시작 화면 -->
+    <div id="startScreen" class="screen active">
+      <div class="start-content">
+        <h1>🕺 Dance Pose</h1>
+        <p class="subtitle">나만의 춤을 만들고 게임처럼 즐기세요</p>
+
+        <div class="section-label">🛠 만들기</div>
+        <div class="mode-grid mode-grid-2">
+          <button class="mode-card" data-mode="record">
+            <div class="mode-emoji">🎥</div>
+            <div class="mode-title">동작 녹화</div>
+            <div class="mode-desc">5초 후 캡쳐</div>
+          </button>
+          <button class="mode-card" data-mode="builder">
+            <div class="mode-emoji">💃</div>
+            <div class="mode-title">루틴 만들기</div>
+            <div class="mode-desc">시퀀스 빌더</div>
+          </button>
+        </div>
+
+        <div class="section-label">🎮 게임 모드</div>
+        <div class="mode-grid mode-grid-game">
+          <button class="mode-card mode-card-game challenge" data-mode="challenge">
+            <div class="mode-emoji">🎯</div>
+            <div class="mode-title">챌린지</div>
+            <div class="mode-desc">랜덤 동작 출제 · 별점 도전</div>
+          </button>
+          <button class="mode-card mode-card-game rhythm" data-mode="rhythm">
+            <div class="mode-emoji">🎵</div>
+            <div class="mode-title">리듬</div>
+            <div class="mode-desc">박자에 맞춰 동작</div>
+          </button>
+          <button class="mode-card mode-card-game mirror" data-mode="mirror">
+            <div class="mode-emoji">🪞</div>
+            <div class="mode-title">거울 모드</div>
+            <div class="mode-desc">본 대로 따라하기 (기억력)</div>
+          </button>
+        </div>
+
+        <div id="bestScoreBox" class="best-score-box hidden">
+          <div class="best-score-title">🏆 최고 기록</div>
+          <div id="bestScoreList" class="best-score-list"></div>
+        </div>
+
+        <div class="info-box">
+          <p>✨ <b>샘플 동작 20개</b>가 미리 들어있어 바로 게임 가능!</p>
+          <p>📷 직접 동작을 녹화하면 더 다양해져요</p>
+          <p>💡 상체가 보이도록 한 걸음 물러서기</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 동작 녹화 -->
+    <div id="recordScreen" class="screen">
+      <div class="record-top">
+        <button class="back-btn" data-back="start">← 뒤로</button>
+        <h2 class="record-title">새 동작 녹화</h2>
+      </div>
+      <div class="record-video-container">
+        <video id="recordVideo" autoplay playsinline muted></video>
+        <canvas id="recordCanvas"></canvas>
+        <div id="recordCountdown" class="record-countdown hidden">
+          <div id="recordCountdownNumber" class="record-countdown-number">5</div>
+          <div class="record-countdown-text">자세를 잡으세요!</div>
+        </div>
+        <div id="captureFlash" class="capture-flash hidden"></div>
+        <div id="recordLoadingOverlay" class="loading-overlay">
+          <div class="spinner"></div>
+          <div id="recordLoadingText">카메라 준비 중...</div>
+        </div>
+        <div id="capturedPreview" class="captured-preview hidden">
+          <svg id="capturedSvg" viewBox="-2 -2 4 4" class="captured-svg"></svg>
+          <div class="captured-label">✨ 동작이 캡쳐되었어요!</div>
+        </div>
+      </div>
+      <div class="record-form" id="recordForm">
+        <div class="form-row">
+          <button id="recordBtn" class="record-btn">
+            <span class="record-btn-icon">🔴</span>
+            <span class="record-btn-text">5초 후 녹화</span>
+          </button>
+        </div>
+        <div id="recordFormFields" class="form-fields hidden">
+          <div class="form-field">
+            <label>동작 이름</label>
+            <input type="text" id="customName" placeholder="예: 내 시그니처 무브" maxlength="20" />
+          </div>
+          <div class="form-field">
+            <label>이모지 선택</label>
+            <div id="emojiPicker" class="emoji-picker"></div>
+          </div>
+          <div class="form-field">
+            <label>동작 설명</label>
+            <textarea id="customInstruction" placeholder="예: 양손을 비스듬히 위로" rows="2" maxlength="60"></textarea>
+          </div>
+          <div class="form-buttons">
+            <button id="recordRetryBtn" class="builder-btn-secondary">다시 녹화</button>
+            <button id="recordSaveBtn" class="primary-btn" disabled>저장</button>
+          </div>
+        </div>
+      </div>
+      <div class="saved-poses-section">
+        <div class="saved-poses-header">
+          <h3>저장된 내 동작 <span id="savedPoseCount" class="count-badge">0</span></h3>
+        </div>
+        <div id="savedPosesList" class="saved-poses-grid"></div>
+      </div>
+    </div>
+
+    <!-- 시퀀스/빌더 -->
+    <div id="sequenceSelectScreen" class="screen">
+      <div class="start-content">
+        <button class="back-btn" data-back="start">← 뒤로</button>
+        <h2 class="section-title">루틴 만들기</h2>
+
+        <div class="builder-current">
+          <div class="builder-current-label">내 시퀀스 <span id="builderStepCount">(0개)</span></div>
+          <div id="builderSteps" class="builder-steps">
+            <div class="builder-empty">아래에서 동작을 추가하세요</div>
+          </div>
+          <div class="builder-controls">
+            <input type="text" id="routineName" class="routine-name-input" placeholder="루틴 이름" maxlength="20" />
+            <div class="builder-buttons">
+              <button id="builderClearBtn" class="builder-btn-secondary">초기화</button>
+              <button id="builderPlayBtn" class="primary-btn" disabled>▶ 따라하기</button>
+            </div>
+            <div class="builder-buttons">
+              <button id="builderSaveBtn" class="builder-btn-secondary" disabled>💾 루틴 저장</button>
+            </div>
+            <div class="builder-difficulty">
+              <span class="builder-diff-label">속도:</span>
+              <button class="diff-btn active" data-diff="easy">느리게</button>
+              <button class="diff-btn" data-diff="medium">보통</button>
+              <button class="diff-btn" data-diff="hard">빠르게</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-label">내 동작 (탭하여 추가)</div>
+        <div id="myPosesGrid" class="pose-library-grid"></div>
+        <div id="myPosesEmpty" class="pose-empty">
+          저장된 동작이 없어요. <br>
+          <button class="link-btn" data-mode="record">새 동작 녹화하기 →</button>
+        </div>
+        <div class="section-label">샘플 동작 20개 ✨</div>
+        <div id="defaultPosesGrid" class="pose-library-grid"></div>
+
+        <div id="savedRoutinesSection" class="hidden">
+          <div class="section-label">저장된 내 루틴</div>
+          <div id="savedRoutinesList" class="sequence-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 챌린지 설정 화면 -->
+    <div id="challengeSetupScreen" class="screen">
+      <div class="start-content">
+        <button class="back-btn" data-back="start">← 뒤로</button>
+        <h2 class="section-title">🎯 챌린지 모드</h2>
+        <p class="subtitle">랜덤 동작에 도전!</p>
+
+        <div class="setup-card">
+          <div class="setup-row">
+            <label class="setup-label">동작 수</label>
+            <div class="setup-options">
+              <button class="setup-btn active" data-count="5">5개</button>
+              <button class="setup-btn" data-count="10">10개</button>
+              <button class="setup-btn" data-count="15">15개</button>
+            </div>
+          </div>
+          <div class="setup-row">
+            <label class="setup-label">난이도</label>
+            <div class="setup-options">
+              <button class="setup-btn active" data-challenge-diff="easy">쉬움</button>
+              <button class="setup-btn" data-challenge-diff="medium">보통</button>
+              <button class="setup-btn" data-challenge-diff="hard">어려움</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="game-rules">
+          <p>⏱ 동작당 제한시간 안에 자세 잡기</p>
+          <p>⭐ 정확도와 속도로 별점 계산</p>
+          <p>🔥 연속 성공 시 콤보 보너스</p>
+        </div>
+
+        <button id="startChallengeBtn" class="primary-btn">시작!</button>
+      </div>
+    </div>
+
+    <!-- 리듬 설정 화면 -->
+    <div id="rhythmSetupScreen" class="screen">
+      <div class="start-content">
+        <button class="back-btn" data-back="start">← 뒤로</button>
+        <h2 class="section-title">🎵 리듬 모드</h2>
+        <p class="subtitle">박자에 맞춰 동작!</p>
+
+        <div class="setup-card">
+          <div class="setup-row">
+            <label class="setup-label">BPM (박자)</label>
+            <div class="setup-options">
+              <button class="setup-btn active" data-bpm="60">60 (느림)</button>
+              <button class="setup-btn" data-bpm="80">80 (보통)</button>
+              <button class="setup-btn" data-bpm="100">100 (빠름)</button>
+            </div>
+          </div>
+          <div class="setup-row">
+            <label class="setup-label">총 비트 수</label>
+            <div class="setup-options">
+              <button class="setup-btn active" data-beats="8">8 비트</button>
+              <button class="setup-btn" data-beats="16">16 비트</button>
+              <button class="setup-btn" data-beats="32">32 비트</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="game-rules">
+          <p>🎵 비트마다 동작이 떨어져요</p>
+          <p>🟢 Perfect: 정확히 박자에 맞췄을 때</p>
+          <p>🟡 Good: 살짝 빗나갔을 때</p>
+          <p>🔴 Miss: 못 맞췄을 때</p>
+        </div>
+
+        <button id="startRhythmBtn" class="primary-btn">시작!</button>
+      </div>
+    </div>
+
+    <!-- 거울 모드 설정 -->
+    <div id="mirrorSetupScreen" class="screen">
+      <div class="start-content">
+        <button class="back-btn" data-back="start">← 뒤로</button>
+        <h2 class="section-title">🪞 거울 모드</h2>
+        <p class="subtitle">본 대로 기억해서 따라하기</p>
+
+        <div class="game-rules">
+          <p>1. 동작이 짧게 보이고 사라져요 👀</p>
+          <p>2. 본 대로 카메라 앞에서 따라해요 💃</p>
+          <p>3. 라운드마다 동작이 1개씩 늘어요 (1→2→3...)</p>
+          <p>4. 라운드 안에서 모두 성공해야 다음 라운드! ✨</p>
+          <p>5. 미스해도 동작은 계속 이어져요 🔄</p>
+        </div>
+
+        <button id="startMirrorBtn" class="primary-btn">시작!</button>
+      </div>
+    </div>
+
+    <!-- 게임 화면 -->
+    <div id="gameScreen" class="screen">
+      <div id="missionCard" class="mission-card">
+        <div class="mission-header">
+          <span id="stepLabel" class="mission-step">준비</span>
+          <span id="comboBadge" class="combo-badge hidden">🔥 <span id="comboCount">0</span> combo</span>
+          <span id="scoreBadge" class="score-badge hidden">⭐ <span id="scoreNum">0</span></span>
+        </div>
+        <div class="mission-body">
+          <div id="poseEmoji" class="mission-emoji">🙌</div>
+          <div class="mission-text-area">
+            <div id="poseName" class="mission-name">준비 중...</div>
+            <div id="poseInstruction" class="mission-instruction">카메라 앞에 서주세요</div>
+          </div>
+        </div>
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+      </div>
+
+      <div class="video-container">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="canvas"></canvas>
+
+        <div id="sequencePreview" class="sequence-preview hidden"></div>
+        <div id="stepCountdown" class="step-countdown hidden">
+          <div id="stepCountdownText" class="step-countdown-text">3.0</div>
+        </div>
+
+        <!-- 리듬 모드 트랙 -->
+        <div id="rhythmTrack" class="rhythm-track hidden">
+          <div class="rhythm-judge-line"></div>
+          <div id="rhythmNotes" class="rhythm-notes"></div>
+          <div id="rhythmJudgement" class="rhythm-judgement hidden"></div>
+        </div>
+
+        <!-- 거울 모드: 본 시퀀스 표시 -->
+        <div id="mirrorShowing" class="mirror-showing hidden">
+          <div class="mirror-showing-label">기억하세요!</div>
+          <div id="mirrorShowingEmoji" class="mirror-showing-emoji">🙌</div>
+          <div id="mirrorShowingName" class="mirror-showing-name">양손 번쩍</div>
+          <div id="mirrorShowingProgress" class="mirror-showing-progress">1 / 3</div>
+        </div>
+
+        <div id="readyBanner" class="ready-banner">
+          <div class="ready-banner-inner">
+            <div class="ready-icon">🙌</div>
+            <div id="readyBannerText" class="ready-banner-text">카메라 앞에 서주세요</div>
+          </div>
+        </div>
+
+        <div id="missionPreview" class="mission-preview hidden">
+          <div class="mission-preview-inner">
+            <div id="previewEmoji" class="preview-emoji">🙌</div>
+            <div id="previewName" class="preview-name">양손 번쩍</div>
+            <div id="previewInstruction" class="preview-instruction">양손을 머리 위로!</div>
+            <div id="previewCountdown" class="preview-countdown">3</div>
+          </div>
+        </div>
+
+        <div id="debugPanel" class="debug-panel hidden"></div>
+        <div class="debug-controls">
+          <button id="debugToggle" class="debug-btn">🐛 Debug</button>
+          <button id="skipBtn" class="debug-btn">⏭ 건너뛰기</button>
+        </div>
+
+        <div id="holdTimer" class="hold-timer hidden">
+          <svg viewBox="0 0 100 100">
+            <circle class="timer-bg" cx="50" cy="50" r="45"></circle>
+            <circle id="timerCircle" class="timer-fg" cx="50" cy="50" r="45"></circle>
+          </svg>
+          <div id="timerText" class="timer-text">0.0</div>
+        </div>
+
+        <div id="successOverlay" class="success-overlay hidden">
+          <div class="success-text">✨ 성공! ✨</div>
+        </div>
+        <div id="missOverlay" class="miss-overlay hidden">
+          <div class="miss-text">❌ Miss!</div>
+        </div>
+        <div id="loadingOverlay" class="loading-overlay">
+          <div class="spinner"></div>
+          <div id="loadingText">AI 모델 로딩 중...</div>
+        </div>
+      </div>
+
+      <div class="bottom-bar">
+        <div id="feedback" class="feedback">카메라 앞에 서주세요</div>
+      </div>
+    </div>
+
+    <!-- 완료 -->
+    <div id="endScreen" class="screen">
+      <div class="end-content">
+        <div class="celebration" id="endCelebration">🎉</div>
+        <h1 id="endTitle">수고하셨어요!</h1>
+        <p id="endSubtitle" class="subtitle">완료했습니다</p>
+        <div id="starsRow" class="stars-row hidden">
+          <span class="star">⭐</span>
+          <span class="star">⭐</span>
+          <span class="star">⭐</span>
+        </div>
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-label">소요 시간</div>
+            <div id="totalTime" class="stat-value">0초</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">점수</div>
+            <div id="totalScore" class="stat-value">0점</div>
+          </div>
+        </div>
+        <div id="extraStats" class="extra-stats hidden"></div>
+        <div id="endBestBadge" class="end-best-badge hidden">🏆 신기록!</div>
+        <button id="restartBtn" class="primary-btn">처음으로</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
