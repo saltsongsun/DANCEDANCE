@@ -9,11 +9,13 @@ import { POSES, POSE_LIBRARY, SEQUENCES, READY_POSE } from "/poses.js";
 // ============ DOM ============
 const startScreen = document.getElementById("startScreen");
 const sequenceSelectScreen = document.getElementById("sequenceSelectScreen");
+const builderScreen = document.getElementById("builderScreen");
 const gameScreen = document.getElementById("gameScreen");
 const endScreen = document.getElementById("endScreen");
 const restartBtn = document.getElementById("restartBtn");
-const backBtn1 = document.getElementById("backBtn1");
 const sequenceList = document.getElementById("sequenceList");
+const myRoutinesSection = document.getElementById("myRoutinesSection");
+const myRoutinesList = document.getElementById("myRoutinesList");
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -41,6 +43,13 @@ const sequencePreview = document.getElementById("sequencePreview");
 const stepCountdown = document.getElementById("stepCountdown");
 const stepCountdownText = document.getElementById("stepCountdownText");
 
+// 미션 미리보기 (3..2..1)
+const missionPreview = document.getElementById("missionPreview");
+const previewEmoji = document.getElementById("previewEmoji");
+const previewName = document.getElementById("previewName");
+const previewInstruction = document.getElementById("previewInstruction");
+const previewCountdown = document.getElementById("previewCountdown");
+
 const totalTimeEl = document.getElementById("totalTime");
 const totalScoreEl = document.getElementById("totalScore");
 const endSubtitle = document.getElementById("endSubtitle");
@@ -50,21 +59,27 @@ const debugPanel = document.getElementById("debugPanel");
 const debugToggle = document.getElementById("debugToggle");
 const skipBtn = document.getElementById("skipBtn");
 
-// ============ 정확도 설정 (깜빡임 제거 최적화) ============
+// 빌더
+const builderSteps = document.getElementById("builderSteps");
+const builderStepCount = document.getElementById("builderStepCount");
+const routineName = document.getElementById("routineName");
+const builderClearBtn = document.getElementById("builderClearBtn");
+const builderSaveBtn = document.getElementById("builderSaveBtn");
+const poseLibraryGrid = document.getElementById("poseLibraryGrid");
+const savedRoutinesSection = document.getElementById("savedRoutinesSection");
+const savedRoutinesList = document.getElementById("savedRoutinesList");
+
+// ============ 설정 ============
 const CONFIG = {
   modelType: 'full',
   visualSmoothing: 0.4,
-
-  // 투표: 최근 5프레임 중 2개만 PASS여도 통과 (매우 관대)
   voteFrames: 5,
   voteThreshold: 2,
-
-  // 디바운스: 한번 PASS 판정되면 N ms간 PASS 유지 강제 (깜빡임 원천 차단)
   passDebounceMs: 350,
-
   minDetectionConfidence: 0.5,
   minPresenceConfidence: 0.5,
-  minTrackingConfidence: 0.5
+  minTrackingConfidence: 0.5,
+  countdownSeconds: 3 // 미션 미리보기 카운트다운
 };
 
 const MODEL_URLS = {
@@ -72,6 +87,41 @@ const MODEL_URLS = {
   full: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task",
   heavy: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task"
 };
+
+// ============ localStorage 헬퍼 ============
+const STORAGE_KEY = "dance_pose_routines_v1";
+
+function loadSavedRoutines() {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    console.error("load failed", e);
+    return [];
+  }
+}
+
+function saveRoutines(routines) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(routines));
+    return true;
+  } catch (e) {
+    console.error("save failed", e);
+    alert("저장 실패: " + e.message);
+    return false;
+  }
+}
+
+function addRoutine(routine) {
+  const all = loadSavedRoutines();
+  all.push(routine);
+  return saveRoutines(all);
+}
+
+function deleteRoutine(id) {
+  const all = loadSavedRoutines().filter(r => r.id !== id);
+  return saveRoutines(all);
+}
 
 // ============ 상태 ============
 let poseLandmarker = null;
@@ -104,6 +154,14 @@ let seqMissCount = 0;
 
 let visualSmoothedLandmarks = null;
 
+// 빌더 상태
+let builderSequence = []; // 추가된 pose id 배열
+let builderDifficulty = "easy";
+
+// 미션 미리보기 상태
+let inPreview = false; // 카운트다운 중에는 판정 안 함
+
+// ============ 시각 스무딩 ============
 function smoothForVisual(current, prev, factor) {
   if (!prev || prev.length !== current.length) return current.map(p => ({ ...p }));
   return current.map((p, i) => {
@@ -119,25 +177,17 @@ function smoothForVisual(current, prev, factor) {
 
 // ============ 투표 + 디바운스 ============
 const voteHistory = [];
-let lastPassTime = 0; // 마지막으로 PASS 판정된 시각
+let lastPassTime = 0;
 
 function decidePass(currentRawPass) {
-  // 1. 투표 추가
   voteHistory.push(currentRawPass);
   if (voteHistory.length > CONFIG.voteFrames) voteHistory.shift();
   const passCount = voteHistory.filter(v => v).length;
   const voteSaysPass = passCount >= CONFIG.voteThreshold;
-
-  // 2. 디바운스: 최근에 PASS였으면 잠깐 PASS 유지
   const now = performance.now();
   const recentlyPassed = (now - lastPassTime) < CONFIG.passDebounceMs;
-
-  // 3. 최종 판정: 투표가 PASS거나 최근 PASS였으면 PASS
   const finalPass = voteSaysPass || recentlyPassed;
-
-  // 4. PASS면 시각 갱신
   if (currentRawPass) lastPassTime = now;
-
   return { finalPass, voteSaysPass, recentlyPassed, passCount };
 }
 
@@ -148,7 +198,7 @@ function resetVote() {
 
 // ============ 화면 전환 ============
 function showScreen(screen) {
-  [startScreen, sequenceSelectScreen, gameScreen, endScreen].forEach(s => s.classList.remove("active"));
+  [startScreen, sequenceSelectScreen, builderScreen, gameScreen, endScreen].forEach(s => s.classList.remove("active"));
   screen.classList.add("active");
 }
 
@@ -173,12 +223,7 @@ async function initPoseLandmarker() {
 
 async function initCamera() {
   loadingText.textContent = "카메라 준비 중...";
-
-  // 디바이스가 세로폰인지 감지하여 적절한 비율 요청
   const isPortrait = window.innerHeight > window.innerWidth;
-
-  // 세로 모드: 높이가 큰 영상 요청 (9:16)
-  // 가로 모드: 가로가 큰 영상 (16:9)
   const constraints = isPortrait
     ? {
         video: {
@@ -199,24 +244,19 @@ async function initCamera() {
         },
         audio: false
       };
-
   try {
     stream = await navigator.mediaDevices.getUserMedia(constraints);
   } catch (e) {
-    // fallback - 기본 설정
-    console.warn("optimal constraints failed, fallback", e);
+    console.warn("fallback", e);
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user" },
-      audio: false
+      video: { facingMode: "user" }, audio: false
     });
   }
-
   video.srcObject = stream;
   await new Promise(resolve => {
     video.onloadedmetadata = () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      console.log("Video resolution:", video.videoWidth, "x", video.videoHeight);
       resolve();
     };
   });
@@ -229,7 +269,7 @@ function stopCamera() {
   }
 }
 
-// ============ UI ============
+// ============ UI 헬퍼 ============
 function updateMissionCard(pose, stepText) {
   poseName.textContent = pose.name;
   poseEmoji.textContent = pose.emoji;
@@ -301,8 +341,7 @@ function showSuccessFlash(msg = "✨ 성공! ✨") {
   setTimeout(() => successOverlay.classList.add("hidden"), 700);
 }
 
-function showMissFlash(msg = "❌ Miss!") {
-  missOverlay.querySelector(".miss-text").textContent = msg;
+function showMissFlash() {
   missOverlay.classList.remove("hidden");
   setTimeout(() => missOverlay.classList.add("hidden"), 600);
 }
@@ -318,39 +357,66 @@ function setFeedback(text, type = "") {
   feedback.className = "feedback" + (type ? " " + type : "");
 }
 
+// ============ 미션 미리보기 (3..2..1) ============
+function showMissionPreview(pose) {
+  return new Promise((resolve) => {
+    inPreview = true;
+    previewEmoji.textContent = pose.emoji;
+    previewName.textContent = pose.name;
+    previewInstruction.textContent = pose.instruction;
+    previewCountdown.classList.remove("go");
+    previewCountdown.textContent = CONFIG.countdownSeconds;
+    missionPreview.classList.remove("hidden");
+
+    let count = CONFIG.countdownSeconds;
+    const interval = setInterval(() => {
+      count--;
+      if (count > 0) {
+        previewCountdown.textContent = count;
+      } else if (count === 0) {
+        previewCountdown.textContent = "GO!";
+        previewCountdown.classList.add("go");
+      } else {
+        clearInterval(interval);
+        missionPreview.classList.add("hidden");
+        inPreview = false;
+        resolve();
+      }
+    }, 1000);
+  });
+}
+
 // ============ 단계 전환 ============
-function startMainGame() {
+async function startMainGame() {
   phase = "playing";
   sessionStartTime = performance.now();
   hideReadyBanner();
-  showSuccessFlash("🎬 시작!");
   resetVote();
 
   if (mode === "single") {
     currentPoseIndex = 0;
     holdStartTime = null;
+    updatePoseUI();
+    await showMissionPreview(POSES[0]);
+    setFeedback("자세를 잡아보세요!", "");
   } else {
     seqStepIndex = 0;
-    seqStepStartTime = performance.now();
     seqStepHeldSince = null;
     seqCombo = 0;
     seqMaxCombo = 0;
     seqScore = 0;
     seqSuccessCount = 0;
     seqMissCount = 0;
-  }
-
-  setTimeout(() => {
     updatePoseUI();
-    setFeedback("첫 포즈!", "");
-    if (mode === "sequence") {
-      stepCountdown.classList.remove("hidden");
-      seqStepStartTime = performance.now();
-    }
-  }, 900);
+    const firstPose = POSE_LIBRARY[selectedSequence.steps[0]];
+    await showMissionPreview(firstPose);
+    setFeedback("자세!", "");
+    stepCountdown.classList.remove("hidden");
+    seqStepStartTime = performance.now();
+  }
 }
 
-function advancePoseSingle() {
+async function advancePoseSingle() {
   showSuccessFlash();
   hideTimer();
   holdStartTime = null;
@@ -359,28 +425,26 @@ function advancePoseSingle() {
   if (currentPoseIndex >= POSES.length) {
     setTimeout(() => finishGame(), 800);
   } else {
-    setTimeout(() => {
+    setTimeout(async () => {
       updatePoseUI();
-      setFeedback("다음 포즈!", "");
+      await showMissionPreview(POSES[currentPoseIndex]);
+      setFeedback("자세!", "");
     }, 800);
   }
 }
 
-function advanceStepSeq(success) {
+async function advanceStepSeq(success) {
   if (success) {
     seqSuccessCount++;
     seqCombo++;
     if (seqCombo > seqMaxCombo) seqMaxCombo = seqCombo;
-    const basePoint = 100;
-    const comboBonus = seqCombo * 20;
-    seqScore += basePoint + comboBonus;
+    seqScore += 100 + seqCombo * 20;
     showSuccessFlash(seqCombo > 1 ? `🔥 ${seqCombo} 콤보!` : "✨ 성공!");
   } else {
     seqMissCount++;
     seqCombo = 0;
     showMissFlash();
   }
-
   seqStepHeldSince = null;
   seqStepIndex++;
   resetVote();
@@ -389,10 +453,12 @@ function advanceStepSeq(success) {
     stepCountdown.classList.add("hidden");
     setTimeout(() => finishGame(), 800);
   } else {
-    setTimeout(() => {
-      seqStepStartTime = performance.now();
+    setTimeout(async () => {
       updatePoseUI();
+      const nextPose = POSE_LIBRARY[selectedSequence.steps[seqStepIndex]];
+      await showMissionPreview(nextPose);
       setFeedback(seqCombo > 0 ? `🔥 ${seqCombo} 콤보!` : "다음!", seqCombo > 0 ? "ok" : "");
+      seqStepStartTime = performance.now();
     }, 600);
   }
 }
@@ -431,10 +497,9 @@ function updateDebugPanel(result, rawResult, decision, isHolding) {
     return;
   }
   debugPanel.classList.remove("hidden");
-
   let html = `<div class="debug-row"><b>FPS:</b> ${fps} <b>${CONFIG.modelType}</b></div>`;
   html += `<div class="debug-row"><b>Phase:</b> ${phase} <b>Hold:</b> ${isHolding ? "ON" : "off"}</div>`;
-  html += `<div class="debug-row debug-data">${video.videoWidth}x${video.videoHeight}</div>`;
+  if (inPreview) html += `<div class="debug-row debug-warn">⏱ 카운트다운 중</div>`;
 
   let currentPose = null;
   if (phase === "ready") currentPose = READY_POSE;
@@ -443,19 +508,17 @@ function updateDebugPanel(result, rawResult, decision, isHolding) {
   html += `<div class="debug-row"><b>Pose:</b> ${currentPose?.name || "-"}</div>`;
 
   if (!result.landmarks || result.landmarks.length === 0) {
-    html += `<div class="debug-row debug-warn">❌ 사람 감지 안됨</div>`;
+    html += `<div class="debug-row debug-warn">❌ 감지 안됨</div>`;
   } else {
     const lm = result.landmarks[0];
     html += `<div class="debug-row debug-ok">✓ 감지</div>`;
     html += `<div class="debug-row debug-data">vis 코${vis(lm,0).toFixed(1)} L어깨${vis(lm,11).toFixed(1)} L손${vis(lm,15).toFixed(1)} R손${vis(lm,16).toFixed(1)}</div>`;
     if (rawResult && decision) {
-      const rawCls = rawResult.pass ? "debug-ok" : "debug-warn";
-      const finalCls = decision.finalPass ? "debug-ok" : "debug-warn";
-      html += `<div class="debug-row ${rawCls}">Raw: ${rawResult.pass ? "✅" : "❌"} ${rawResult.hint}</div>`;
-      html += `<div class="debug-row ${finalCls}">Final: ${decision.finalPass ? "✅" : "❌"} (vote ${decision.passCount}/${voteHistory.length}${decision.recentlyPassed ? ' +debounce' : ''})</div>`;
-      if (rawResult.debug) {
-        html += `<div class="debug-row debug-data">${rawResult.debug}</div>`;
-      }
+      const rc = rawResult.pass ? "debug-ok" : "debug-warn";
+      const fc = decision.finalPass ? "debug-ok" : "debug-warn";
+      html += `<div class="debug-row ${rc}">Raw: ${rawResult.pass ? "✅" : "❌"} ${rawResult.hint}</div>`;
+      html += `<div class="debug-row ${fc}">Final: ${decision.finalPass ? "✅" : "❌"} (${decision.passCount}/${voteHistory.length}${decision.recentlyPassed ? '+db' : ''})</div>`;
+      if (rawResult.debug) html += `<div class="debug-row debug-data">${rawResult.debug}</div>`;
     }
   }
   debugPanel.innerHTML = html;
@@ -486,9 +549,9 @@ function predictLoop() {
       visualSmoothedLandmarks = null;
     }
 
-    const { rawResult, decision, isHolding } = handleDetection(result);
+    const detection = handleDetection(result);
     drawLandmarks(result);
-    updateDebugPanel(result, rawResult, decision, isHolding);
+    updateDebugPanel(result, detection.rawResult, detection.decision, detection.isHolding);
   }
   requestAnimationFrame(predictLoop);
 }
@@ -503,7 +566,7 @@ function isCurrentlyHolding() {
 function handleDetection(result) {
   if (!result.landmarks || result.landmarks.length === 0) {
     if (phase === "ready") showReadyBanner("카메라 앞에 서주세요 👀");
-    setFeedback("사람이 감지되지 않아요", "warn");
+    if (!inPreview) setFeedback("사람이 감지되지 않아요", "warn");
     if (phase === "ready") {
       holdStartTime = null;
       hideTimer();
@@ -516,13 +579,16 @@ function handleDetection(result) {
   const worldLandmarks = result.worldLandmarks?.[0] || null;
   const isHolding = isCurrentlyHolding();
 
+  // 카운트다운 중에는 좌표 분석은 하되 판정 처리는 보류
+  if (inPreview) {
+    return { rawResult: null, decision: null, isHolding: false };
+  }
+
   // 준비 단계
   if (phase === "ready") {
     const rawResult = READY_POSE.check(landmarks, worldLandmarks, isHolding);
     const decision = decidePass(rawResult.pass);
-
     showReadyBanner(decision.finalPass ? "좋아요! 유지하세요 ✨" : "양손을 머리 위로 🙌");
-
     if (decision.finalPass) {
       setFeedback(rawResult.hint, "ok");
       if (holdStartTime === null) {
@@ -548,7 +614,6 @@ function handleDetection(result) {
     const pose = POSES[currentPoseIndex];
     const rawResult = pose.check(landmarks, worldLandmarks, isHolding);
     const decision = decidePass(rawResult.pass);
-
     if (decision.finalPass) {
       setFeedback(rawResult.hint, "ok");
       if (holdStartTime === null) {
@@ -581,7 +646,6 @@ function handleDetection(result) {
       advanceStepSeq(false);
       return { rawResult, decision, isHolding };
     }
-
     if (decision.finalPass) {
       setFeedback(rawResult.hint, "ok");
       if (seqStepHeldSince === null) seqStepHeldSince = performance.now();
@@ -612,26 +676,181 @@ function drawLandmarks(result) {
   ctx.restore();
 }
 
-// ============ 시퀀스 목록 ============
+// ============ 시퀀스 선택 화면 ============
 function renderSequenceList() {
+  // 기본 루틴
   sequenceList.innerHTML = "";
   SEQUENCES.forEach(seq => {
+    sequenceList.appendChild(makeSequenceCard(seq, false));
+  });
+
+  // 내 루틴
+  const saved = loadSavedRoutines();
+  if (saved.length > 0) {
+    myRoutinesSection.classList.remove("hidden");
+    myRoutinesList.innerHTML = "";
+    saved.forEach(seq => {
+      myRoutinesList.appendChild(makeSequenceCard(seq, true));
+    });
+  } else {
+    myRoutinesSection.classList.add("hidden");
+  }
+}
+
+function makeSequenceCard(seq, isCustom) {
+  const card = document.createElement("div");
+  card.className = "sequence-card";
+
+  const diffName = { easy: "Easy", medium: "Medium", hard: "Hard" }[seq.difficulty] || seq.difficulty;
+
+  card.innerHTML = `
+    <div class="sequence-diff ${seq.difficulty.toLowerCase()}">${diffName}</div>
+    <div class="sequence-info">
+      <div class="sequence-name">${seq.name}</div>
+      <div class="sequence-desc">${seq.description}</div>
+    </div>
+    ${isCustom ? `<button class="sequence-delete-btn" title="삭제">🗑</button>` : ''}
+    <div style="font-size:1.3rem;color:var(--primary);">▶</div>
+  `;
+
+  card.addEventListener("click", (e) => {
+    if (e.target.classList.contains("sequence-delete-btn")) return;
+    selectedSequence = seq;
+    mode = "sequence";
+    startGame();
+  });
+
+  if (isCustom) {
+    const delBtn = card.querySelector(".sequence-delete-btn");
+    delBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (confirm(`"${seq.name}" 루틴을 삭제할까요?`)) {
+        deleteRoutine(seq.id);
+        renderSequenceList();
+      }
+    });
+  }
+  return card;
+}
+
+// ============ 빌더 ============
+function renderPoseLibrary() {
+  poseLibraryGrid.innerHTML = "";
+  Object.values(POSE_LIBRARY).forEach(pose => {
     const card = document.createElement("button");
-    card.className = "sequence-card";
+    card.className = "pose-lib-card";
     card.innerHTML = `
-      <div class="sequence-diff ${seq.difficulty.toLowerCase()}">${seq.difficulty}</div>
-      <div class="sequence-info">
-        <div class="sequence-name">${seq.name}</div>
-        <div class="sequence-desc">${seq.description}</div>
-      </div>
-      <div style="font-size:1.5rem;">▶</div>
+      <div class="pose-lib-emoji">${pose.emoji}</div>
+      <div class="pose-lib-name">${pose.name}</div>
     `;
     card.addEventListener("click", () => {
-      selectedSequence = seq;
-      mode = "sequence";
-      startGame();
+      builderSequence.push(pose.id);
+      renderBuilderSteps();
     });
-    sequenceList.appendChild(card);
+    poseLibraryGrid.appendChild(card);
+  });
+}
+
+function renderBuilderSteps() {
+  builderStepCount.textContent = `(${builderSequence.length}개)`;
+
+  if (builderSequence.length === 0) {
+    builderSteps.innerHTML = '<div class="builder-empty">아래에서 동작을 추가하세요</div>';
+    builderSaveBtn.disabled = true;
+    return;
+  }
+
+  builderSteps.innerHTML = "";
+  builderSequence.forEach((poseId, i) => {
+    const pose = POSE_LIBRARY[poseId];
+    const step = document.createElement("div");
+    step.className = "builder-step";
+    step.innerHTML = `
+      <div class="builder-step-num">${i + 1}</div>
+      <div class="builder-step-emoji">${pose.emoji}</div>
+      <div class="builder-step-name">${pose.name}</div>
+    `;
+    step.addEventListener("click", () => {
+      builderSequence.splice(i, 1);
+      renderBuilderSteps();
+    });
+    builderSteps.appendChild(step);
+  });
+
+  // 이름 입력 + 동작 1개 이상이면 저장 가능
+  builderSaveBtn.disabled = !routineName.value.trim() || builderSequence.length === 0;
+}
+
+function clearBuilder() {
+  builderSequence = [];
+  routineName.value = "";
+  builderDifficulty = "easy";
+  document.querySelectorAll(".diff-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.diff === "easy");
+  });
+  renderBuilderSteps();
+}
+
+function saveCurrentBuilder() {
+  const name = routineName.value.trim();
+  if (!name || builderSequence.length === 0) return;
+
+  // 난이도별 시간 설정
+  const timing = {
+    easy:   { stepHoldMs: 400, stepWindowMs: 3500 },
+    medium: { stepHoldMs: 350, stepWindowMs: 3000 },
+    hard:   { stepHoldMs: 300, stepWindowMs: 2500 }
+  }[builderDifficulty];
+
+  const routine = {
+    id: `custom_${Date.now()}`,
+    name: name,
+    description: `${builderSequence.length}동작 · 내가 만든 루틴`,
+    difficulty: builderDifficulty,
+    stepHoldMs: timing.stepHoldMs,
+    stepWindowMs: timing.stepWindowMs,
+    steps: [...builderSequence],
+    createdAt: new Date().toISOString()
+  };
+
+  if (addRoutine(routine)) {
+    showToast(`✅ "${name}" 저장 완료!`);
+    clearBuilder();
+    renderSavedRoutinesInBuilder();
+  }
+}
+
+function showToast(msg) {
+  // 간단한 토스트
+  const toast = document.createElement("div");
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--success);
+    color: #000;
+    padding: 14px 24px;
+    border-radius: 12px;
+    font-weight: 700;
+    z-index: 1000;
+    animation: scaleIn 0.3s ease;
+  `;
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2200);
+}
+
+function renderSavedRoutinesInBuilder() {
+  const saved = loadSavedRoutines();
+  if (saved.length === 0) {
+    savedRoutinesSection.classList.add("hidden");
+    return;
+  }
+  savedRoutinesSection.classList.remove("hidden");
+  savedRoutinesList.innerHTML = "";
+  saved.forEach(seq => {
+    savedRoutinesList.appendChild(makeSequenceCard(seq, true));
   });
 }
 
@@ -658,6 +877,7 @@ async function startGame() {
     seqStepIndex = 0;
     holdStartTime = null;
     visualSmoothedLandmarks = null;
+    inPreview = false;
     resetVote();
     updatePoseUI();
     showReadyBanner("카메라 앞에 서주세요 👀");
@@ -683,11 +903,18 @@ document.querySelectorAll(".mode-card").forEach(btn => {
     } else if (m === "sequence") {
       renderSequenceList();
       showScreen(sequenceSelectScreen);
+    } else if (m === "builder") {
+      clearBuilder();
+      renderPoseLibrary();
+      renderSavedRoutinesInBuilder();
+      showScreen(builderScreen);
     }
   });
 });
 
-backBtn1.addEventListener("click", () => showScreen(startScreen));
+document.querySelectorAll("[data-back]").forEach(btn => {
+  btn.addEventListener("click", () => showScreen(startScreen));
+});
 
 restartBtn.addEventListener("click", () => {
   mode = null;
@@ -703,9 +930,30 @@ debugToggle.addEventListener("click", () => {
 
 skipBtn.addEventListener("click", () => {
   if (!running) return;
+  if (inPreview) return;
   if (phase === "ready") startMainGame();
   else if (mode === "single") advancePoseSingle();
   else if (mode === "sequence") advanceStepSeq(false);
+});
+
+// 빌더
+builderClearBtn.addEventListener("click", () => {
+  if (builderSequence.length > 0 && !confirm("초기화할까요?")) return;
+  clearBuilder();
+});
+
+builderSaveBtn.addEventListener("click", saveCurrentBuilder);
+
+routineName.addEventListener("input", () => {
+  builderSaveBtn.disabled = !routineName.value.trim() || builderSequence.length === 0;
+});
+
+document.querySelectorAll(".diff-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".diff-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    builderDifficulty = btn.dataset.diff;
+  });
 });
 
 debugToggle.textContent = debugVisible ? "🐛 Debug: ON" : "🐛 Debug: OFF";

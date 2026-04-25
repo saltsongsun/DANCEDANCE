@@ -19,12 +19,17 @@
           <button class="mode-card" data-mode="single">
             <div class="mode-emoji">🎯</div>
             <div class="mode-title">싱글 모드</div>
-            <div class="mode-desc">15개 포즈 · 하나씩 천천히</div>
+            <div class="mode-desc">15개 포즈 · 하나씩</div>
           </button>
           <button class="mode-card" data-mode="sequence">
             <div class="mode-emoji">💃</div>
             <div class="mode-title">연속동작 모드</div>
-            <div class="mode-desc">짧은 루틴 · 박자에 맞춰</div>
+            <div class="mode-desc">루틴 따라하기</div>
+          </button>
+          <button class="mode-card mode-card-wide" data-mode="builder">
+            <div class="mode-emoji">🎬</div>
+            <div class="mode-title">내 루틴 만들기</div>
+            <div class="mode-desc">동작 골라서 나만의 시퀀스 저장</div>
           </button>
         </div>
 
@@ -39,15 +44,60 @@
     <!-- 시퀀스 선택 화면 -->
     <div id="sequenceSelectScreen" class="screen">
       <div class="start-content">
-        <button class="back-btn" id="backBtn1">← 뒤로</button>
+        <button class="back-btn" data-back="start">← 뒤로</button>
         <h2 class="section-title">루틴을 선택하세요</h2>
+
+        <div class="section-label">기본 루틴</div>
         <div id="sequenceList" class="sequence-list"></div>
+
+        <div id="myRoutinesSection" class="hidden">
+          <div class="section-label">내 루틴</div>
+          <div id="myRoutinesList" class="sequence-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 루틴 빌더 화면 -->
+    <div id="builderScreen" class="screen">
+      <div class="start-content">
+        <button class="back-btn" data-back="start">← 뒤로</button>
+        <h2 class="section-title">루틴 만들기</h2>
+
+        <!-- 현재 만들고 있는 루틴 -->
+        <div class="builder-current">
+          <div class="builder-current-label">내 시퀀스 <span id="builderStepCount">(0개)</span></div>
+          <div id="builderSteps" class="builder-steps">
+            <div class="builder-empty">아래에서 동작을 추가하세요</div>
+          </div>
+          <div class="builder-controls">
+            <input type="text" id="routineName" class="routine-name-input" placeholder="루틴 이름 (예: 내 댄스)" maxlength="20" />
+            <div class="builder-buttons">
+              <button id="builderClearBtn" class="builder-btn-secondary">초기화</button>
+              <button id="builderSaveBtn" class="primary-btn" disabled>저장</button>
+            </div>
+            <div class="builder-difficulty">
+              <span class="builder-diff-label">난이도:</span>
+              <button class="diff-btn active" data-diff="easy">쉬움</button>
+              <button class="diff-btn" data-diff="medium">보통</button>
+              <button class="diff-btn" data-diff="hard">어려움</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-label">동작 라이브러리</div>
+        <div id="poseLibraryGrid" class="pose-library-grid"></div>
+
+        <!-- 저장된 루틴 목록 -->
+        <div id="savedRoutinesSection" class="hidden">
+          <div class="section-label">저장된 내 루틴</div>
+          <div id="savedRoutinesList" class="saved-routines-list"></div>
+        </div>
       </div>
     </div>
 
     <!-- 게임 화면 -->
     <div id="gameScreen" class="screen">
-      <!-- 상단: 큰 미션 카드 -->
+      <!-- 미션 카드 -->
       <div id="missionCard" class="mission-card">
         <div class="mission-header">
           <span id="stepLabel" class="mission-step">준비</span>
@@ -65,15 +115,15 @@
         </div>
       </div>
 
-      <!-- 비디오 영역 -->
+      <!-- 비디오 -->
       <div class="video-container">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="canvas"></canvas>
 
-        <!-- 연속동작 시퀀스 미리보기 (상단) -->
+        <!-- 시퀀스 미리보기 -->
         <div id="sequencePreview" class="sequence-preview hidden"></div>
 
-        <!-- 큰 카운트다운 (시퀀스 모드에서 각 스텝 제한시간) -->
+        <!-- 큰 카운트다운 (시퀀스 스텝 제한시간) -->
         <div id="stepCountdown" class="step-countdown hidden">
           <div id="stepCountdownText" class="step-countdown-text">3.0</div>
         </div>
@@ -86,12 +136,22 @@
           </div>
         </div>
 
-        <!-- 디버그 패널 -->
+        <!-- 큰 미션 미리보기 (3..2..1 카운트다운) -->
+        <div id="missionPreview" class="mission-preview hidden">
+          <div class="mission-preview-inner">
+            <div id="previewEmoji" class="preview-emoji">🙌</div>
+            <div id="previewName" class="preview-name">양손 번쩍</div>
+            <div id="previewInstruction" class="preview-instruction">양손을 머리 위로!</div>
+            <div id="previewCountdown" class="preview-countdown">3</div>
+          </div>
+        </div>
+
+        <!-- 디버그 -->
         <div id="debugPanel" class="debug-panel hidden"></div>
 
-        <!-- 디버그 컨트롤 -->
+        <!-- 컨트롤 -->
         <div class="debug-controls">
-          <button id="debugToggle" class="debug-btn">🐛 Debug</button>
+          <button id="debugToggle" class="debug-btn">🐛 Debug: ON</button>
           <button id="skipBtn" class="debug-btn">⏭ 건너뛰기</button>
         </div>
 
@@ -104,24 +164,18 @@
           <div id="timerText" class="timer-text">0.0</div>
         </div>
 
-        <!-- 성공 오버레이 -->
         <div id="successOverlay" class="success-overlay hidden">
           <div class="success-text">✨ 성공! ✨</div>
         </div>
-
-        <!-- 실패 오버레이 (시퀀스 모드) -->
         <div id="missOverlay" class="miss-overlay hidden">
           <div class="miss-text">❌ Miss!</div>
         </div>
-
-        <!-- 로딩 오버레이 -->
         <div id="loadingOverlay" class="loading-overlay">
           <div class="spinner"></div>
           <div id="loadingText">AI 모델 로딩 중...</div>
         </div>
       </div>
 
-      <!-- 하단 피드백 -->
       <div class="bottom-bar">
         <div id="feedback" class="feedback">카메라 앞에 서주세요</div>
       </div>
