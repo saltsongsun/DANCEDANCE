@@ -219,6 +219,7 @@ let seqScore = 0;
 let seqSuccessCount = 0;
 let seqMissCount = 0;
 let inPreview = false;
+let isAdvancing = false; // 동작 전환 중 (detection 일시 무시)
 
 // 챌린지 설정
 let challengeCount = 5;
@@ -1051,6 +1052,7 @@ async function startMirrorRound() {
 }
 
 async function mirrorAdvance(success) {
+  isAdvancing = true;
   if (success) {
     showSuccessFlash();
     seqSuccessCount++;
@@ -1066,21 +1068,19 @@ async function mirrorAdvance(success) {
   resetVote();
   seqStepIndex++;
   seqStepHeldSince = null;
+  seqStepStartTime = performance.now() + 999999;
 
   if (seqStepIndex >= mirrorSequence.length) {
     // 라운드 종료
-    // 모두 성공해야만 다음 라운드 진행, 하나라도 미스면 라운드 끝
     const roundCleared = seqMissCount === 0 || seqSuccessCount === mirrorSequence.length;
 
     if (roundCleared) {
-      // 라운드 클리어 → 다음 라운드
-      seqScore += 100 * mirrorRound; // 라운드 보너스
+      seqScore += 100 * mirrorRound;
       stepCountdown.classList.add("hidden");
       showSuccessFlash(`🎉 라운드 ${mirrorRound} 클리어!`);
       await sleep(1000);
 
       mirrorRound++;
-      // 다음 라운드용 카운터 초기화 (이번 라운드 미스 체크용)
       seqSuccessCount = 0;
       seqMissCount = 0;
 
@@ -1091,18 +1091,19 @@ async function mirrorAdvance(success) {
       ];
       mirrorSequence.push(allIds[Math.floor(Math.random() * allIds.length)]);
       await startMirrorRound();
+      isAdvancing = false;
     } else {
-      // 라운드 실패 → 게임 종료
       stepCountdown.classList.add("hidden");
       await sleep(800);
+      isAdvancing = false;
       finishGame();
     }
   } else {
-    // 라운드 안에서 다음 동작으로
     setTimeout(async () => {
       updatePoseUI();
       await showMissionPreview(getActivePose());
       seqStepStartTime = performance.now();
+      isAdvancing = false;
     }, 600);
   }
 }
@@ -1148,6 +1149,7 @@ async function startGame() {
     holdStartTime = null;
     visualSmoothedLandmarks = null;
     inPreview = false;
+    isAdvancing = false;
     seqCombo = 0;
     seqMaxCombo = 0;
     seqScore = 0;
@@ -1352,6 +1354,7 @@ async function startMainGame() {
 }
 
 async function advancePoseSingle(success = true) {
+  isAdvancing = true;
   if (success) {
     showSuccessFlash();
   } else {
@@ -1362,6 +1365,8 @@ async function advancePoseSingle(success = true) {
   holdStartTime = null;
   resetVote();
   currentPoseIndex++;
+  singleStepStartTime = performance.now() + 999999;
+
   if (currentPoseIndex >= POSES.length) {
     setTimeout(() => finishGame(), 800);
   } else {
@@ -1369,6 +1374,7 @@ async function advancePoseSingle(success = true) {
       updatePoseUI();
       await showMissionPreview(POSES[currentPoseIndex]);
       singleStepStartTime = performance.now();
+      isAdvancing = false;
     }, 800);
   }
 }
@@ -1378,6 +1384,9 @@ async function advanceStepSeq(success) {
     await mirrorAdvance(success);
     return;
   }
+
+  // 전환 시작 - detection 일시 중단
+  isAdvancing = true;
 
   if (success) {
     seqSuccessCount++;
@@ -1396,6 +1405,9 @@ async function advanceStepSeq(success) {
   seqStepIndex++;
   resetVote();
 
+  // 시간 윈도우 무효화
+  seqStepStartTime = performance.now() + 999999;
+
   if (seqStepIndex >= selectedSequence.steps.length) {
     stepCountdown.classList.add("hidden");
     setTimeout(() => finishGame(), 800);
@@ -1403,7 +1415,9 @@ async function advanceStepSeq(success) {
     setTimeout(async () => {
       updatePoseUI();
       await showMissionPreview(getActivePose());
+      // 미리보기 끝난 후 정확히 시간 시작
       seqStepStartTime = performance.now();
+      isAdvancing = false; // detection 다시 활성화
     }, 600);
   }
 }
@@ -1547,6 +1561,7 @@ function handleDetection(result) {
   const isHolding = isCurrentlyHolding();
 
   if (inPreview) return { rawResult: null, decision: null, isHolding: false };
+  if (isAdvancing) return { rawResult: null, decision: null, isHolding: false };
   if (mode === "mirror" && mirrorPhase === "show") {
     return { rawResult: null, decision: null, isHolding: false };
   }
