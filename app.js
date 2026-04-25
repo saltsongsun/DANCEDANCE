@@ -50,25 +50,21 @@ const debugPanel = document.getElementById("debugPanel");
 const debugToggle = document.getElementById("debugToggle");
 const skipBtn = document.getElementById("skipBtn");
 
-// ============ 정확도 설정 ============
-const ACCURACY_CONFIG = {
-  // 모델 종류: 'lite' | 'full' | 'heavy'
-  // full: 9MB, 높은 정확도 (권장)
-  // heavy: 30MB, 최고 정확도 (빠른 PC/WiFi 필요)
-  // lite: 3MB, 빠름 (저사양)
+// ============ 정확도 설정 (깜빡임 제거 최적화) ============
+const CONFIG = {
   modelType: 'full',
+  visualSmoothing: 0.4,
 
-  // EMA 스무딩 계수 (0~1, 높을수록 부드럽지만 반응 느림)
-  smoothingFactor: 0.6,
-
-  // 프레임 투표: 최근 N 프레임 중 과반이 PASS여야 진짜 PASS
+  // 투표: 최근 5프레임 중 2개만 PASS여도 통과 (매우 관대)
   voteFrames: 5,
-  voteThreshold: 3, // 5프레임 중 3프레임 PASS면 인정 (60%)
+  voteThreshold: 2,
 
-  // MediaPipe 신뢰도 (조금 높임 → 더 확실한 감지만)
-  minDetectionConfidence: 0.6,
-  minPresenceConfidence: 0.6,
-  minTrackingConfidence: 0.6
+  // 디바운스: 한번 PASS 판정되면 N ms간 PASS 유지 강제 (깜빡임 원천 차단)
+  passDebounceMs: 350,
+
+  minDetectionConfidence: 0.5,
+  minPresenceConfidence: 0.5,
+  minTrackingConfidence: 0.5
 };
 
 const MODEL_URLS = {
@@ -82,23 +78,20 @@ let poseLandmarker = null;
 let running = false;
 let lastVideoTime = -1;
 let stream = null;
-let debugVisible = false;
+let debugVisible = true;
 let frameCount = 0;
 let lastFpsTime = performance.now();
 let fps = 0;
 
-// 모드 & 단계
 let mode = null;
 let phase = "ready";
 let sessionStartTime = null;
 
-// 싱글
 const HOLD_DURATION_MS = 1000;
 const READY_HOLD_MS = 800;
 let currentPoseIndex = 0;
 let holdStartTime = null;
 
-// 시퀀스
 let selectedSequence = null;
 let seqStepIndex = 0;
 let seqStepStartTime = null;
@@ -109,84 +102,121 @@ let seqScore = 0;
 let seqSuccessCount = 0;
 let seqMissCount = 0;
 
-// ============ EMA 스무딩 ============
-// 이전 프레임의 좌표를 저장하여 새 좌표와 가중평균
-let smoothedLandmarks = null;
-let smoothedWorldLandmarks = null;
+let visualSmoothedLandmarks = null;
 
-function smoothLandmarks(current, prev, factor) {
-  if (!prev || prev.length !== current.length) {
-    // 첫 프레임은 그대로
-    return current.map((p) => ({ ...p }));
-  }
+function smoothForVisual(current, prev, factor) {
+  if (!prev || prev.length !== current.length) return current.map(p => ({ ...p }));
   return current.map((p, i) => {
-    const prevP = prev[i];
+    const pp = prev[i];
     return {
-      x: prevP.x * factor + p.x * (1 - factor),
-      y: prevP.y * factor + p.y * (1 - factor),
-      z: (prevP.z ?? 0) * factor + (p.z ?? 0) * (1 - factor),
-      visibility: Math.max(prevP.visibility ?? 0, p.visibility ?? 0)
+      x: pp.x * factor + p.x * (1 - factor),
+      y: pp.y * factor + p.y * (1 - factor),
+      z: (pp.z ?? 0) * factor + (p.z ?? 0) * (1 - factor),
+      visibility: p.visibility ?? 1
     };
   });
 }
 
-// ============ 프레임 투표 (히스테리시스) ============
-// 최근 N 프레임의 PASS/FAIL 기록으로 안정화
+// ============ 투표 + 디바운스 ============
 const voteHistory = [];
+let lastPassTime = 0; // 마지막으로 PASS 판정된 시각
 
-function voteAndDecide(currentPass) {
-  voteHistory.push(currentPass);
-  if (voteHistory.length > ACCURACY_CONFIG.voteFrames) {
-    voteHistory.shift();
-  }
-  const passCount = voteHistory.filter((v) => v).length;
-  return passCount >= ACCURACY_CONFIG.voteThreshold;
+function decidePass(currentRawPass) {
+  // 1. 투표 추가
+  voteHistory.push(currentRawPass);
+  if (voteHistory.length > CONFIG.voteFrames) voteHistory.shift();
+  const passCount = voteHistory.filter(v => v).length;
+  const voteSaysPass = passCount >= CONFIG.voteThreshold;
+
+  // 2. 디바운스: 최근에 PASS였으면 잠깐 PASS 유지
+  const now = performance.now();
+  const recentlyPassed = (now - lastPassTime) < CONFIG.passDebounceMs;
+
+  // 3. 최종 판정: 투표가 PASS거나 최근 PASS였으면 PASS
+  const finalPass = voteSaysPass || recentlyPassed;
+
+  // 4. PASS면 시각 갱신
+  if (currentRawPass) lastPassTime = now;
+
+  return { finalPass, voteSaysPass, recentlyPassed, passCount };
 }
 
 function resetVote() {
   voteHistory.length = 0;
+  lastPassTime = 0;
 }
 
 // ============ 화면 전환 ============
 function showScreen(screen) {
-  [startScreen, sequenceSelectScreen, gameScreen, endScreen].forEach((s) => s.classList.remove("active"));
+  [startScreen, sequenceSelectScreen, gameScreen, endScreen].forEach(s => s.classList.remove("active"));
   screen.classList.add("active");
 }
 
 // ============ MediaPipe ============
 async function initPoseLandmarker() {
-  loadingText.textContent = `AI 모델(${ACCURACY_CONFIG.modelType}) 다운로드 중...`;
+  loadingText.textContent = `AI 모델(${CONFIG.modelType}) 다운로드 중...`;
   const vision = await FilesetResolver.forVisionTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/wasm"
   );
   poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
     baseOptions: {
-      modelAssetPath: MODEL_URLS[ACCURACY_CONFIG.modelType],
+      modelAssetPath: MODEL_URLS[CONFIG.modelType],
       delegate: "GPU"
     },
     runningMode: "VIDEO",
     numPoses: 1,
-    minPoseDetectionConfidence: ACCURACY_CONFIG.minDetectionConfidence,
-    minPosePresenceConfidence: ACCURACY_CONFIG.minPresenceConfidence,
-    minTrackingConfidence: ACCURACY_CONFIG.minTrackingConfidence
+    minPoseDetectionConfidence: CONFIG.minDetectionConfidence,
+    minPosePresenceConfidence: CONFIG.minPresenceConfidence,
+    minTrackingConfidence: CONFIG.minTrackingConfidence
   });
 }
 
 async function initCamera() {
   loadingText.textContent = "카메라 준비 중...";
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      facingMode: "user"
-    },
-    audio: false
-  });
+
+  // 디바이스가 세로폰인지 감지하여 적절한 비율 요청
+  const isPortrait = window.innerHeight > window.innerWidth;
+
+  // 세로 모드: 높이가 큰 영상 요청 (9:16)
+  // 가로 모드: 가로가 큰 영상 (16:9)
+  const constraints = isPortrait
+    ? {
+        video: {
+          width: { ideal: 720, min: 480 },
+          height: { ideal: 1280, min: 854 },
+          facingMode: "user",
+          frameRate: { ideal: 30 },
+          aspectRatio: { ideal: 9/16 }
+        },
+        audio: false
+      }
+    : {
+        video: {
+          width: { ideal: 1280, min: 854 },
+          height: { ideal: 720, min: 480 },
+          facingMode: "user",
+          frameRate: { ideal: 30 }
+        },
+        audio: false
+      };
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+  } catch (e) {
+    // fallback - 기본 설정
+    console.warn("optimal constraints failed, fallback", e);
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user" },
+      audio: false
+    });
+  }
+
   video.srcObject = stream;
-  await new Promise((resolve) => {
+  await new Promise(resolve => {
     video.onloadedmetadata = () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+      console.log("Video resolution:", video.videoWidth, "x", video.videoHeight);
       resolve();
     };
   });
@@ -194,7 +224,7 @@ async function initCamera() {
 
 function stopCamera() {
   if (stream) {
-    stream.getTracks().forEach((t) => t.stop());
+    stream.getTracks().forEach(t => t.stop());
     stream = null;
   }
 }
@@ -266,15 +296,13 @@ function hideTimer() {
 }
 
 function showSuccessFlash(msg = "✨ 성공! ✨") {
-  const t = successOverlay.querySelector(".success-text");
-  t.textContent = msg;
+  successOverlay.querySelector(".success-text").textContent = msg;
   successOverlay.classList.remove("hidden");
   setTimeout(() => successOverlay.classList.add("hidden"), 700);
 }
 
 function showMissFlash(msg = "❌ Miss!") {
-  const t = missOverlay.querySelector(".miss-text");
-  t.textContent = msg;
+  missOverlay.querySelector(".miss-text").textContent = msg;
   missOverlay.classList.remove("hidden");
   setTimeout(() => missOverlay.classList.add("hidden"), 600);
 }
@@ -380,32 +408,33 @@ function finishGame() {
     totalScoreEl.textContent = `${POSES.length} / ${POSES.length}`;
     endSubtitle.textContent = `15개 포즈를 모두 완료했습니다`;
     extraStats.classList.add("hidden");
-    progressFill.style.width = "100%";
   } else {
     totalScoreEl.textContent = `${seqScore}점`;
-    const total = selectedSequence.steps.length;
     endSubtitle.textContent = `${selectedSequence.name} 완주!`;
     extraStats.classList.remove("hidden");
     extraStats.innerHTML = `
-      ✅ 성공: <b>${seqSuccessCount} / ${total}</b><br>
+      ✅ 성공: <b>${seqSuccessCount} / ${selectedSequence.steps.length}</b><br>
       ❌ 놓침: <b>${seqMissCount}</b><br>
       🔥 최고 콤보: <b>${seqMaxCombo}</b>
     `;
-    progressFill.style.width = "100%";
   }
+  progressFill.style.width = "100%";
   showScreen(endScreen);
 }
 
 // ============ 디버그 ============
-function updateDebugPanel(result, poseResult, votedPass) {
+function vis(lm, i) { return lm[i] ? (lm[i].visibility ?? 1) : 0; }
+
+function updateDebugPanel(result, rawResult, decision, isHolding) {
   if (!debugVisible) {
     debugPanel.classList.add("hidden");
     return;
   }
   debugPanel.classList.remove("hidden");
 
-  let html = `<div class="debug-row"><b>FPS:</b> ${fps} <b>Model:</b> ${ACCURACY_CONFIG.modelType}</div>`;
-  html += `<div class="debug-row"><b>Phase:</b> ${phase} <b>Mode:</b> ${mode || "-"}</div>`;
+  let html = `<div class="debug-row"><b>FPS:</b> ${fps} <b>${CONFIG.modelType}</b></div>`;
+  html += `<div class="debug-row"><b>Phase:</b> ${phase} <b>Hold:</b> ${isHolding ? "ON" : "off"}</div>`;
+  html += `<div class="debug-row debug-data">${video.videoWidth}x${video.videoHeight}</div>`;
 
   let currentPose = null;
   if (phase === "ready") currentPose = READY_POSE;
@@ -416,20 +445,17 @@ function updateDebugPanel(result, poseResult, votedPass) {
   if (!result.landmarks || result.landmarks.length === 0) {
     html += `<div class="debug-row debug-warn">❌ 사람 감지 안됨</div>`;
   } else {
-    html += `<div class="debug-row debug-ok">✓ 감지됨 (스무딩 ON)</div>`;
-    if (poseResult) {
-      const rawCls = poseResult.pass ? "debug-ok" : "debug-warn";
-      const voteCls = votedPass ? "debug-ok" : "debug-warn";
-      html += `<div class="debug-row ${rawCls}">Raw: ${poseResult.pass ? "✅" : "❌"} ${poseResult.hint}</div>`;
-      html += `<div class="debug-row ${voteCls}">Vote: ${votedPass ? "✅" : "❌"} (${voteHistory.filter(v=>v).length}/${voteHistory.length})</div>`;
-      if (poseResult.debug) {
-        html += `<div class="debug-row debug-data">${poseResult.debug}</div>`;
+    const lm = result.landmarks[0];
+    html += `<div class="debug-row debug-ok">✓ 감지</div>`;
+    html += `<div class="debug-row debug-data">vis 코${vis(lm,0).toFixed(1)} L어깨${vis(lm,11).toFixed(1)} L손${vis(lm,15).toFixed(1)} R손${vis(lm,16).toFixed(1)}</div>`;
+    if (rawResult && decision) {
+      const rawCls = rawResult.pass ? "debug-ok" : "debug-warn";
+      const finalCls = decision.finalPass ? "debug-ok" : "debug-warn";
+      html += `<div class="debug-row ${rawCls}">Raw: ${rawResult.pass ? "✅" : "❌"} ${rawResult.hint}</div>`;
+      html += `<div class="debug-row ${finalCls}">Final: ${decision.finalPass ? "✅" : "❌"} (vote ${decision.passCount}/${voteHistory.length}${decision.recentlyPassed ? ' +debounce' : ''})</div>`;
+      if (rawResult.debug) {
+        html += `<div class="debug-row debug-data">${rawResult.debug}</div>`;
       }
-    }
-    if (mode === "sequence" && phase === "playing" && seqStepStartTime) {
-      const elapsed = performance.now() - seqStepStartTime;
-      html += `<div class="debug-row"><b>Window:</b> ${(elapsed/1000).toFixed(1)}/${(selectedSequence.stepWindowMs/1000).toFixed(1)}s</div>`;
-      html += `<div class="debug-row"><b>Combo:</b> ${seqCombo} <b>Score:</b> ${seqScore}</div>`;
     }
   }
   debugPanel.innerHTML = html;
@@ -450,31 +476,28 @@ function predictLoop() {
     lastVideoTime = video.currentTime;
     const result = poseLandmarker.detectForVideo(video, performance.now());
 
-    // 스무딩 적용
     if (result.landmarks && result.landmarks.length > 0) {
-      smoothedLandmarks = smoothLandmarks(
+      visualSmoothedLandmarks = smoothForVisual(
         result.landmarks[0],
-        smoothedLandmarks,
-        ACCURACY_CONFIG.smoothingFactor
+        visualSmoothedLandmarks,
+        CONFIG.visualSmoothing
       );
-      if (result.worldLandmarks && result.worldLandmarks.length > 0) {
-        smoothedWorldLandmarks = smoothLandmarks(
-          result.worldLandmarks[0],
-          smoothedWorldLandmarks,
-          ACCURACY_CONFIG.smoothingFactor
-        );
-      }
     } else {
-      // 감지 실패 - 이전 스무딩 초기화
-      smoothedLandmarks = null;
-      smoothedWorldLandmarks = null;
+      visualSmoothedLandmarks = null;
     }
 
-    const { poseResult, votedPass } = handleDetection(result);
+    const { rawResult, decision, isHolding } = handleDetection(result);
     drawLandmarks(result);
-    updateDebugPanel(result, poseResult, votedPass);
+    updateDebugPanel(result, rawResult, decision, isHolding);
   }
   requestAnimationFrame(predictLoop);
+}
+
+function isCurrentlyHolding() {
+  if (phase === "ready") return holdStartTime !== null;
+  if (mode === "single") return holdStartTime !== null;
+  if (mode === "sequence") return seqStepHeldSince !== null;
+  return false;
 }
 
 function handleDetection(result) {
@@ -486,22 +509,21 @@ function handleDetection(result) {
       hideTimer();
     }
     resetVote();
-    return { poseResult: null, votedPass: false };
+    return { rawResult: null, decision: null, isHolding: false };
   }
 
-  // 스무딩된 좌표 사용
-  const landmarks = smoothedLandmarks || result.landmarks[0];
-  const worldLandmarks = smoothedWorldLandmarks || result.worldLandmarks?.[0] || null;
+  const landmarks = result.landmarks[0];
+  const worldLandmarks = result.worldLandmarks?.[0] || null;
+  const isHolding = isCurrentlyHolding();
 
   // 준비 단계
   if (phase === "ready") {
-    const rawResult = READY_POSE.check(landmarks, worldLandmarks);
-    const votedPass = voteAndDecide(rawResult.pass);
+    const rawResult = READY_POSE.check(landmarks, worldLandmarks, isHolding);
+    const decision = decidePass(rawResult.pass);
 
-    if (!votedPass) showReadyBanner("양손을 머리 위로 올리면 시작 🙌");
-    else showReadyBanner("좋아요! 유지하세요 ✨");
+    showReadyBanner(decision.finalPass ? "좋아요! 유지하세요 ✨" : "양손을 머리 위로 🙌");
 
-    if (votedPass) {
+    if (decision.finalPass) {
       setFeedback(rawResult.hint, "ok");
       if (holdStartTime === null) {
         holdStartTime = performance.now();
@@ -518,16 +540,16 @@ function handleDetection(result) {
       holdStartTime = null;
       hideTimer();
     }
-    return { poseResult: rawResult, votedPass };
+    return { rawResult, decision, isHolding };
   }
 
-  // 싱글 모드
+  // 싱글
   if (mode === "single") {
     const pose = POSES[currentPoseIndex];
-    const rawResult = pose.check(landmarks, worldLandmarks);
-    const votedPass = voteAndDecide(rawResult.pass);
+    const rawResult = pose.check(landmarks, worldLandmarks, isHolding);
+    const decision = decidePass(rawResult.pass);
 
-    if (votedPass) {
+    if (decision.finalPass) {
       setFeedback(rawResult.hint, "ok");
       if (holdStartTime === null) {
         holdStartTime = performance.now();
@@ -541,15 +563,15 @@ function handleDetection(result) {
       holdStartTime = null;
       hideTimer();
     }
-    return { poseResult: rawResult, votedPass };
+    return { rawResult, decision, isHolding };
   }
 
-  // 시퀀스 모드
+  // 시퀀스
   if (mode === "sequence") {
     const stepId = selectedSequence.steps[seqStepIndex];
     const pose = POSE_LIBRARY[stepId];
-    const rawResult = pose.check(landmarks, worldLandmarks);
-    const votedPass = voteAndDecide(rawResult.pass);
+    const rawResult = pose.check(landmarks, worldLandmarks, isHolding);
+    const decision = decidePass(rawResult.pass);
 
     const windowElapsed = performance.now() - seqStepStartTime;
     const windowRemain = selectedSequence.stepWindowMs - windowElapsed;
@@ -557,26 +579,22 @@ function handleDetection(result) {
 
     if (windowRemain <= 0) {
       advanceStepSeq(false);
-      return { poseResult: rawResult, votedPass };
+      return { rawResult, decision, isHolding };
     }
 
-    if (votedPass) {
+    if (decision.finalPass) {
       setFeedback(rawResult.hint, "ok");
-      if (seqStepHeldSince === null) {
-        seqStepHeldSince = performance.now();
-      }
+      if (seqStepHeldSince === null) seqStepHeldSince = performance.now();
       const heldFor = performance.now() - seqStepHeldSince;
-      if (heldFor >= selectedSequence.stepHoldMs) {
-        advanceStepSeq(true);
-      }
+      if (heldFor >= selectedSequence.stepHoldMs) advanceStepSeq(true);
     } else {
       seqStepHeldSince = null;
       setFeedback(rawResult.hint, "");
     }
-    return { poseResult: rawResult, votedPass };
+    return { rawResult, decision, isHolding };
   }
 
-  return { poseResult: null, votedPass: false };
+  return { rawResult: null, decision: null, isHolding: false };
 }
 
 function drawLandmarks(result) {
@@ -584,8 +602,7 @@ function drawLandmarks(result) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (result.landmarks && result.landmarks.length > 0) {
     const drawingUtils = new DrawingUtils(ctx);
-    // 스무딩된 좌표로 그려서 시각적으로도 부드럽게
-    const toDraw = smoothedLandmarks || result.landmarks[0];
+    const toDraw = visualSmoothedLandmarks || result.landmarks[0];
     drawingUtils.drawLandmarks(toDraw, { radius: 5, color: "#7c5cff", lineWidth: 2 });
     drawingUtils.drawConnectors(toDraw, PoseLandmarker.POSE_CONNECTIONS, {
       color: "#00ffa3",
@@ -598,7 +615,7 @@ function drawLandmarks(result) {
 // ============ 시퀀스 목록 ============
 function renderSequenceList() {
   sequenceList.innerHTML = "";
-  SEQUENCES.forEach((seq) => {
+  SEQUENCES.forEach(seq => {
     const card = document.createElement("button");
     card.className = "sequence-card";
     card.innerHTML = `
@@ -640,8 +657,7 @@ async function startGame() {
     currentPoseIndex = 0;
     seqStepIndex = 0;
     holdStartTime = null;
-    smoothedLandmarks = null;
-    smoothedWorldLandmarks = null;
+    visualSmoothedLandmarks = null;
     resetVote();
     updatePoseUI();
     showReadyBanner("카메라 앞에 서주세요 👀");
@@ -657,7 +673,7 @@ async function startGame() {
 }
 
 // ============ 이벤트 ============
-document.querySelectorAll(".mode-card").forEach((btn) => {
+document.querySelectorAll(".mode-card").forEach(btn => {
   btn.addEventListener("click", () => {
     const m = btn.dataset.mode;
     if (m === "single") {
@@ -682,7 +698,7 @@ restartBtn.addEventListener("click", () => {
 
 debugToggle.addEventListener("click", () => {
   debugVisible = !debugVisible;
-  debugToggle.textContent = debugVisible ? "🐛 Debug: ON" : "🐛 Debug";
+  debugToggle.textContent = debugVisible ? "🐛 Debug: ON" : "🐛 Debug: OFF";
 });
 
 skipBtn.addEventListener("click", () => {
@@ -691,3 +707,5 @@ skipBtn.addEventListener("click", () => {
   else if (mode === "single") advancePoseSingle();
   else if (mode === "sequence") advanceStepSeq(false);
 });
+
+debugToggle.textContent = debugVisible ? "🐛 Debug: ON" : "🐛 Debug: OFF";
