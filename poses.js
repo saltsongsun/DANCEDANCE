@@ -52,10 +52,15 @@ export function normalizePose(lm) {
 export function poseDistance(normA, normB) {
   if (!normA || !normB) return Infinity;
   const KEY_INDICES = [0, 11, 12, 13, 14, 15, 16];
+  // 가중치 평준화 - 손목/팔꿈치 비중 줄여서 작은 흔들림에 덜 민감하게
   const WEIGHTS = {
-    0: 0.5, 11: 0.3, 12: 0.3,
-    13: 1.5, 14: 1.5,
-    15: 2.0, 16: 2.0
+    0: 0.5,    // 코
+    11: 0.5,   // 어깨
+    12: 0.5,
+    13: 0.8,   // 팔꿈치 (이전 1.5 → 0.8)
+    14: 0.8,
+    15: 1.2,   // 손목 (이전 2.0 → 1.2)
+    16: 1.2
   };
   let totalWeighted = 0;
   let totalWeight = 0;
@@ -91,10 +96,11 @@ export function createCustomPose(customData) {
         return { pass: false, hint: "자세를 인식 중...", debug: "정규화 실패" };
       }
       const d = poseDistance(currentNorm, customData.referencePose);
-      const threshold = isHolding ? 0.65 : 0.45;
+      // 매우 관대한 임계값 - 거의 비슷하기만 하면 통과
+      const threshold = isHolding ? 0.9 : 0.7;
       const debug = `유사도=${d.toFixed(3)} (필요<${threshold})`;
       if (d < threshold) {
-        const quality = d < 0.25 ? "완벽!" : d < 0.4 ? "좋아요!" : "OK!";
+        const quality = d < 0.4 ? "완벽!" : d < 0.55 ? "좋아요!" : "OK!";
         return { pass: true, hint: quality, debug };
       }
       const hint = getDiffHint(currentNorm, customData.referencePose);
@@ -519,8 +525,8 @@ export const SEQUENCES = [
     name: "기본 데모 ✨",
     description: "샘플 동작 4개",
     difficulty: "easy",
-    stepHoldMs: 400,
-    stepWindowMs: 4000,
+    stepHoldMs: 300,
+    stepWindowMs: 6000,
     steps: ["sample_both_up", "sample_t_pose", "sample_left_up", "sample_right_up"]
   }
 ];

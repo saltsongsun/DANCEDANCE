@@ -116,13 +116,15 @@ const startChallengeBtn = document.getElementById("startChallengeBtn");
 const startRhythmBtn = document.getElementById("startRhythmBtn");
 const startMirrorBtn = document.getElementById("startMirrorBtn");
 
-// ============ 설정 ============
+// ============ 정확도 설정 ============
 const CONFIG = {
   modelType: 'full',
   visualSmoothing: 0.4,
+  // 매우 관대한 투표: 5프레임 중 1프레임만 PASS여도 통과
   voteFrames: 5,
-  voteThreshold: 2,
-  passDebounceMs: 350,
+  voteThreshold: 1,
+  // 디바운스 길게: 한번 PASS하면 0.6초 동안 PASS 유지
+  passDebounceMs: 600,
   minDetectionConfidence: 0.5,
   minPresenceConfidence: 0.5,
   minTrackingConfidence: 0.5,
@@ -202,9 +204,9 @@ let selectedEmoji = "💃";
 let mode = null; // "single" | "sequence" | "challenge" | "rhythm" | "mirror"
 let phase = "ready"; // "ready" | "playing" | "done"
 let sessionStartTime = null;
-const HOLD_DURATION_MS = 1000;
-const READY_HOLD_MS = 800;
-const SINGLE_TIMEOUT_MS = 8000; // 싱글 모드: 8초 안에 못하면 자동으로 다음
+const HOLD_DURATION_MS = 600; // 1초 → 0.6초 (자세 잡으면 빨리 통과)
+const READY_HOLD_MS = 600;
+const SINGLE_TIMEOUT_MS = 12000; // 8초 → 12초
 let currentPoseIndex = 0;
 let holdStartTime = null;
 let singleStepStartTime = null; // 싱글 모드 스텝 시작 시각
@@ -741,9 +743,9 @@ function saveCurrentRoutine() {
   const name = routineName.value.trim();
   if (!name || builderSequence.length === 0) return;
   const timing = {
-    easy: { stepHoldMs: 400, stepWindowMs: 4000 },
-    medium: { stepHoldMs: 350, stepWindowMs: 3000 },
-    hard: { stepHoldMs: 300, stepWindowMs: 2500 }
+    easy: { stepHoldMs: 300, stepWindowMs: 6000 },
+    medium: { stepHoldMs: 250, stepWindowMs: 4500 },
+    hard: { stepHoldMs: 200, stepWindowMs: 3500 }
   }[builderDifficulty];
   const routine = {
     id: `routine_${Date.now()}`,
@@ -763,9 +765,9 @@ function saveCurrentRoutine() {
 function playCurrentBuilder() {
   if (builderSequence.length === 0) return;
   const timing = {
-    easy: { stepHoldMs: 400, stepWindowMs: 4000 },
-    medium: { stepHoldMs: 350, stepWindowMs: 3000 },
-    hard: { stepHoldMs: 300, stepWindowMs: 2500 }
+    easy: { stepHoldMs: 300, stepWindowMs: 6000 },
+    medium: { stepHoldMs: 250, stepWindowMs: 4500 },
+    hard: { stepHoldMs: 200, stepWindowMs: 3500 }
   }[builderDifficulty];
   const tempRoutine = {
     id: "temp_" + Date.now(),
@@ -806,9 +808,9 @@ function startChallenge() {
   }
 
   const timing = {
-    easy: { stepHoldMs: 400, stepWindowMs: 4000 },
-    medium: { stepHoldMs: 350, stepWindowMs: 3000 },
-    hard: { stepHoldMs: 300, stepWindowMs: 2200 }
+    easy: { stepHoldMs: 300, stepWindowMs: 6000 },
+    medium: { stepHoldMs: 250, stepWindowMs: 4500 },
+    hard: { stepHoldMs: 200, stepWindowMs: 3500 }
   }[challengeDifficulty];
 
   selectedSequence = {
