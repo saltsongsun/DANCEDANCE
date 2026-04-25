@@ -97,10 +97,10 @@ export function createCustomPose(customData) {
       }
       const d = poseDistance(currentNorm, customData.referencePose);
       const isSampleData = customData.isSample === true;
-      // 임시: 샘플은 거의 무조건 통과 (게임 흐름 테스트용)
-      // 실제 좌표 데이터 받으면 다시 조정
-      const enterThreshold = isSampleData ? 3.0 : 0.7;
-      const exitThreshold = isSampleData ? 4.0 : 0.95;
+      // 진입: 0.6 (자세 비슷하면 통과)
+      // 유지: 0.7 (한번 통과 후엔 더 관대 - 살짝 흔들려도 안 풀림)
+      const enterThreshold = isSampleData ? 0.6 : 0.6;
+      const exitThreshold = isSampleData ? 0.7 : 0.7;
       const threshold = isHolding ? exitThreshold : enterThreshold;
       const debug = `유사도=${d.toFixed(3)} 필요<${threshold} ${isSampleData ? '(sample)' : '(user)'}`;
       if (d < threshold) {
