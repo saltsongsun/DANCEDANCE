@@ -204,8 +204,10 @@ let phase = "ready"; // "ready" | "playing" | "done"
 let sessionStartTime = null;
 const HOLD_DURATION_MS = 1000;
 const READY_HOLD_MS = 800;
+const SINGLE_TIMEOUT_MS = 8000; // 싱글 모드: 8초 안에 못하면 자동으로 다음
 let currentPoseIndex = 0;
 let holdStartTime = null;
+let singleStepStartTime = null; // 싱글 모드 스텝 시작 시각
 
 let selectedSequence = null;
 let seqStepIndex = 0;
@@ -1026,6 +1028,9 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function startMirrorRound() {
   mirrorPhase = "show";
+  // 이번 라운드용 카운터 초기화
+  seqSuccessCount = 0;
+  seqMissCount = 0;
   setFeedback(`🪞 라운드 ${mirrorRound} - 잘 보세요!`, "");
   await sleep(500);
   await showMirrorSequence();
@@ -1046,35 +1051,54 @@ async function startMirrorRound() {
 }
 
 async function mirrorAdvance(success) {
-  if (!success) {
-    // 게임 오버
+  if (success) {
+    showSuccessFlash();
+    seqSuccessCount++;
+    seqCombo++;
+    if (seqCombo > seqMaxCombo) seqMaxCombo = seqCombo;
+    seqScore += 50 + seqCombo * 10;
+  } else {
     showMissFlash();
-    await sleep(800);
-    finishGame();
-    return;
+    seqMissCount++;
+    seqCombo = 0;
   }
-  // 성공 → 다음 동작
-  showSuccessFlash();
+  updateScoreUI();
   resetVote();
   seqStepIndex++;
   seqStepHeldSince = null;
-  if (seqStepIndex >= mirrorSequence.length) {
-    // 라운드 클리어 → 다음 라운드
-    seqScore += 100 * mirrorRound;
-    mirrorRound++;
-    seqMaxCombo = mirrorRound - 1;
-    stepCountdown.classList.add("hidden");
-    showSuccessFlash(`🎉 라운드 ${mirrorRound - 1} 클리어!`);
-    await sleep(1000);
 
-    const customPoses = loadCustomPoses();
-    const allIds = [
-      ...SAMPLE_POSES.map(p => p.id),
-      ...customPoses.map(p => p.id)
-    ];
-    mirrorSequence.push(allIds[Math.floor(Math.random() * allIds.length)]);
-    await startMirrorRound();
+  if (seqStepIndex >= mirrorSequence.length) {
+    // 라운드 종료
+    // 모두 성공해야만 다음 라운드 진행, 하나라도 미스면 라운드 끝
+    const roundCleared = seqMissCount === 0 || seqSuccessCount === mirrorSequence.length;
+
+    if (roundCleared) {
+      // 라운드 클리어 → 다음 라운드
+      seqScore += 100 * mirrorRound; // 라운드 보너스
+      stepCountdown.classList.add("hidden");
+      showSuccessFlash(`🎉 라운드 ${mirrorRound} 클리어!`);
+      await sleep(1000);
+
+      mirrorRound++;
+      // 다음 라운드용 카운터 초기화 (이번 라운드 미스 체크용)
+      seqSuccessCount = 0;
+      seqMissCount = 0;
+
+      const customPoses = loadCustomPoses();
+      const allIds = [
+        ...SAMPLE_POSES.map(p => p.id),
+        ...customPoses.map(p => p.id)
+      ];
+      mirrorSequence.push(allIds[Math.floor(Math.random() * allIds.length)]);
+      await startMirrorRound();
+    } else {
+      // 라운드 실패 → 게임 종료
+      stepCountdown.classList.add("hidden");
+      await sleep(800);
+      finishGame();
+    }
   } else {
+    // 라운드 안에서 다음 동작으로
     setTimeout(async () => {
       updatePoseUI();
       await showMissionPreview(getActivePose());
@@ -1310,9 +1334,11 @@ async function startMainGame() {
   if (mode === "single") {
     currentPoseIndex = 0;
     holdStartTime = null;
+    singleStepStartTime = performance.now();
     updatePoseUI();
     await showMissionPreview(POSES[0]);
     setFeedback("자세!", "");
+    singleStepStartTime = performance.now(); // 미리보기 끝난 후 다시 시작
   } else {
     // sequence, challenge
     seqStepIndex = 0;
@@ -1325,8 +1351,13 @@ async function startMainGame() {
   }
 }
 
-async function advancePoseSingle() {
-  showSuccessFlash();
+async function advancePoseSingle(success = true) {
+  if (success) {
+    showSuccessFlash();
+  } else {
+    showMissFlash();
+    seqMissCount++;
+  }
   hideTimer();
   holdStartTime = null;
   resetVote();
@@ -1337,6 +1368,7 @@ async function advancePoseSingle() {
     setTimeout(async () => {
       updatePoseUI();
       await showMissionPreview(POSES[currentPoseIndex]);
+      singleStepStartTime = performance.now();
     }, 800);
   }
 }
@@ -1585,12 +1617,21 @@ function handleDetection(result) {
   const decision = decidePass(r.pass);
 
   if (mode === "single") {
+    // 시간 초과 체크
+    if (singleStepStartTime !== null) {
+      const elapsed = performance.now() - singleStepStartTime;
+      if (elapsed >= SINGLE_TIMEOUT_MS && !decision.finalPass) {
+        advancePoseSingle(false);
+        return { rawResult: r, decision, isHolding };
+      }
+    }
+
     if (decision.finalPass) {
       setFeedback(r.hint, "ok");
       if (holdStartTime === null) { holdStartTime = performance.now(); showTimer(); }
       const elapsed = performance.now() - holdStartTime;
       updateTimerUI(elapsed, HOLD_DURATION_MS);
-      if (elapsed >= HOLD_DURATION_MS) advancePoseSingle();
+      if (elapsed >= HOLD_DURATION_MS) advancePoseSingle(true);
     } else {
       setFeedback(r.hint, "");
       holdStartTime = null;
