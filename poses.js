@@ -29,17 +29,12 @@ function shoulderWidth(lm) {
 }
 
 // ============ 정규화 ============
-// 포즈를 어깨 중심을 원점으로, 어깨폭으로 스케일링
-// 이렇게 하면 사람의 위치/거리에 무관한 좌표가 됨
 export function normalizePose(lm) {
   if (!lm || !lm[11] || !lm[12]) return null;
   const sw = shoulderWidth(lm);
   if (sw < 0.05) return null;
-
   const cx = (lm[11].x + lm[12].x) / 2;
   const cy = (lm[11].y + lm[12].y) / 2;
-
-  // 상체에서 핵심 관절들만 정규화 (얼굴은 노이즈 많음)
   const KEY_INDICES = [0, 11, 12, 13, 14, 15, 16];
   const normalized = {};
   for (const i of KEY_INDICES) {
@@ -53,30 +48,20 @@ export function normalizePose(lm) {
   return normalized;
 }
 
-// ============ 두 정규화된 포즈 간 거리 ============
-// 작을수록 유사. 0이면 완전 동일
-// 일반적으로 0.3 이하면 매우 비슷, 0.5 이하면 비슷, 0.8 이상이면 다름
+// ============ 거리 비교 ============
 export function poseDistance(normA, normB) {
   if (!normA || !normB) return Infinity;
   const KEY_INDICES = [0, 11, 12, 13, 14, 15, 16];
-  // 가중치: 손목/팔꿈치 동작이 가장 중요
   const WEIGHTS = {
-    0: 0.5,   // 코 (위치 보정용)
-    11: 0.3,  // 어깨 (이미 정규화 기준)
-    12: 0.3,
-    13: 1.5,  // 팔꿈치
-    14: 1.5,
-    15: 2.0,  // 손목 (가장 중요)
-    16: 2.0
+    0: 0.5, 11: 0.3, 12: 0.3,
+    13: 1.5, 14: 1.5,
+    15: 2.0, 16: 2.0
   };
-
   let totalWeighted = 0;
   let totalWeight = 0;
   for (const i of KEY_INDICES) {
-    const a = normA[i];
-    const b = normB[i];
+    const a = normA[i], b = normB[i];
     if (!a || !b) continue;
-    // 둘 다 visibility 너무 낮으면 무시
     if ((a.visibility ?? 1) < 0.3 && (b.visibility ?? 1) < 0.3) continue;
     const d = Math.hypot(a.x - b.x, a.y - b.y);
     const w = WEIGHTS[i] ?? 1;
@@ -88,15 +73,15 @@ export function poseDistance(normA, normB) {
 }
 
 // ============ 커스텀 포즈 매처 생성 ============
-// 사용자가 녹화한 정규화 포즈를 받아 check 함수를 가진 객체 반환
 export function createCustomPose(customData) {
   return {
     id: customData.id,
     name: customData.name,
     emoji: customData.emoji,
     instruction: customData.instruction,
-    isCustom: true,
-    referencePose: customData.referencePose, // 정규화된 좌표
+    isCustom: customData.isCustom !== false,
+    isSample: customData.isSample === true,
+    referencePose: customData.referencePose,
     check: (lm, worldLm, isHolding) => {
       if (!upperVisible(lm)) {
         return { pass: false, hint: "상체가 보이도록 서주세요", debug: "vis 부족" };
@@ -106,14 +91,12 @@ export function createCustomPose(customData) {
         return { pass: false, hint: "자세를 인식 중...", debug: "정규화 실패" };
       }
       const d = poseDistance(currentNorm, customData.referencePose);
-      // 임계값: 진입 0.45, 유지 0.6 (히스테리시스)
       const threshold = isHolding ? 0.65 : 0.45;
-      const debug = `유사도 거리=${d.toFixed(3)} (필요<${threshold})`;
+      const debug = `유사도=${d.toFixed(3)} (필요<${threshold})`;
       if (d < threshold) {
         const quality = d < 0.25 ? "완벽!" : d < 0.4 ? "좋아요!" : "OK!";
         return { pass: true, hint: quality, debug };
       }
-      // 자세 차이가 크면 어떤 부분이 다른지 힌트
       const hint = getDiffHint(currentNorm, customData.referencePose);
       return { pass: false, hint, debug };
     }
@@ -121,14 +104,11 @@ export function createCustomPose(customData) {
 }
 
 function getDiffHint(current, reference) {
-  // 손목 위치 차이가 가장 클 때 힌트
   const lwDiff = current[15] && reference[15]
     ? Math.hypot(current[15].x - reference[15].x, current[15].y - reference[15].y) : 0;
   const rwDiff = current[16] && reference[16]
     ? Math.hypot(current[16].x - reference[16].x, current[16].y - reference[16].y) : 0;
-
   if (lwDiff < 0.2 && rwDiff < 0.2) return "조금만 더!";
-
   if (lwDiff > rwDiff) {
     if (current[15] && reference[15]) {
       if (current[15].y > reference[15].y + 0.2) return "왼손을 더 올려주세요";
@@ -168,63 +148,379 @@ export const READY_POSE = {
   }
 };
 
-// ============ 기본 포즈 라이브러리 (커스텀이 없을 때 fallback) ============
-// 단순화 - 기본 몇 개만 둠. 사용자가 직접 녹화한 게 메인이 됨
-export const POSE_LIBRARY = {
-  both_hands_up: {
-    id: "both_hands_up",
+// ============ 좌표 헬퍼 ============
+// MediaPipe 정규화 좌표계 기준 (x: 왼쪽=음수, 오른쪽=양수, y: 위쪽=음수, 아래=양수)
+// 어깨 중점을 원점, 어깨폭=1로 정규화한 좌표
+//
+// 표준 위치:
+// - 코: x=0, y=-1.0 (어깨 위)
+// - 왼어깨(11): x=-0.5, y=0
+// - 오른어깨(12): x=0.5, y=0
+// - 보통 팔길이 = 어깨폭 정도
+//
+// MediaPipe는 "사람 몸 기준"으로 left/right 표시:
+// - lm[11]=사람의 왼쪽 어깨 (화면 거울모드면 화면 오른쪽에 보임)
+// - lm[15]=사람의 왼손목
+
+// 포즈 빌더 헬퍼: 간단히 자세 정의
+function makePose(coords) {
+  // coords: { 0: [x,y], 11: [x,y], ... }
+  const pose = {};
+  for (const [idx, xy] of Object.entries(coords)) {
+    pose[idx] = { x: xy[0], y: xy[1], visibility: 1.0 };
+  }
+  return pose;
+}
+
+// ============ 20개 샘플 포즈 정의 ============
+// 각 포즈의 reference는 정규화된 좌표 (어깨 중점 원점, 어깨폭 단위)
+// 코는 보통 (0, -1.2), 어깨는 (-0.5, 0) (0.5, 0)
+// 아래로 떨어진 손은 보통 (-0.5, 1.5) (0.5, 1.5)
+// 머리 위 손은 (-0.4, -2.2) (0.4, -2.2)
+
+const SAMPLE_POSES_RAW = [
+  // ============ 손 올리기 계열 ============
+  {
+    id: "sample_both_up",
     name: "양손 번쩍",
     emoji: "🙌",
-    instruction: "양손을 머리 위로!",
-    check: (lm, worldLm, isHolding) => {
-      if (!upperVisible(lm)) return { pass: false, hint: "상체가 보이도록", debug: "" };
-      const nose = lm[0], lw = lm[15], rw = lm[16];
-      const margin = isHolding ? 0.1 : 0.0;
-      const leftUp = lw.y < nose.y + margin;
-      const rightUp = rw.y < nose.y + margin;
-      const debug = `L=${lw.y.toFixed(2)} R=${rw.y.toFixed(2)}`;
-      if (leftUp && rightUp) return { pass: true, hint: "완벽!", debug };
-      return { pass: false, hint: "양손 더 위로!", debug };
+    instruction: "양손을 머리 위로 번쩍!",
+    coords: {
+      0:  [0, -1.2],     // 코
+      11: [-0.5, 0],     // 왼어깨
+      12: [0.5, 0],      // 오른어깨
+      13: [-0.6, -1.0],  // 왼팔꿈치 (위로 굽힘)
+      14: [0.6, -1.0],   // 오른팔꿈치
+      15: [-0.4, -2.2],  // 왼손목 (머리 위)
+      16: [0.4, -2.2]    // 오른손목
     }
   },
-  t_pose: {
-    id: "t_pose",
+  {
+    id: "sample_left_up",
+    name: "왼손 번쩍",
+    emoji: "👈",
+    instruction: "왼손만 머리 위로!",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.6, -1.0],
+      14: [0.5, 0.8],    // 오른팔 내림
+      15: [-0.4, -2.2],
+      16: [0.5, 1.5]
+    }
+  },
+  {
+    id: "sample_right_up",
+    name: "오른손 번쩍",
+    emoji: "👉",
+    instruction: "오른손만 머리 위로!",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.5, 0.8],
+      14: [0.6, -1.0],
+      15: [-0.5, 1.5],
+      16: [0.4, -2.2]
+    }
+  },
+  {
+    id: "sample_y_pose",
+    name: "Y 포즈",
+    emoji: "🙆",
+    instruction: "Y자로 양팔 활짝!",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-1.2, -0.8],  // 팔꿈치 비스듬히
+      14: [1.2, -0.8],
+      15: [-1.6, -1.6],  // 손목 위쪽 바깥
+      16: [1.6, -1.6]
+    }
+  },
+  {
+    id: "sample_v_pose",
+    name: "V 포즈",
+    emoji: "✌️",
+    instruction: "양손 V자로 위로!",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.7, -0.9],
+      14: [0.7, -0.9],
+      15: [-0.9, -1.9],  // 손목 위쪽 약간 바깥
+      16: [0.9, -1.9]
+    }
+  },
+
+  // ============ 팔 벌리기 계열 ============
+  {
+    id: "sample_t_pose",
     name: "T 포즈",
     emoji: "🤸",
-    instruction: "양팔을 좌우로 쭉!",
-    check: (lm, worldLm, isHolding) => {
-      if (!upperVisible(lm)) return { pass: false, hint: "상체가 보이도록", debug: "" };
-      const ls = lm[11], rs = lm[12], lw = lm[15], rw = lm[16];
-      const sw = shoulderWidth(lm);
-      const shY = (ls.y + rs.y) / 2;
-      const tol = isHolding ? sw * 0.75 : sw * 0.55;
-      const leftLevel = Math.abs(lw.y - shY) < tol;
-      const rightLevel = Math.abs(rw.y - shY) < tol;
-      const wristSpread = dist2D(lw, rw);
-      const spread = wristSpread > sw * (isHolding ? 1.5 : 1.7);
-      const debug = `폭=${(wristSpread/sw).toFixed(1)}x`;
-      if (leftLevel && rightLevel && spread) return { pass: true, hint: "T!", debug };
-      if (!spread) return { pass: false, hint: "팔 더 벌려요", debug };
-      return { pass: false, hint: "어깨 높이로", debug };
+    instruction: "양팔 좌우로 쭉! T자",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-1.5, 0],     // 팔꿈치 어깨 높이 바깥
+      14: [1.5, 0],
+      15: [-2.5, 0],     // 손목 더 바깥 어깨 높이
+      16: [2.5, 0]
+    }
+  },
+  {
+    id: "sample_left_arm_side",
+    name: "왼팔 옆으로",
+    emoji: "⬅️",
+    instruction: "왼팔만 옆으로 쭉!",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-1.5, 0],
+      14: [0.5, 0.8],
+      15: [-2.5, 0],
+      16: [0.5, 1.5]
+    }
+  },
+  {
+    id: "sample_right_arm_side",
+    name: "오른팔 옆으로",
+    emoji: "➡️",
+    instruction: "오른팔만 옆으로 쭉!",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.5, 0.8],
+      14: [1.5, 0],
+      15: [-0.5, 1.5],
+      16: [2.5, 0]
+    }
+  },
+  {
+    id: "sample_wing",
+    name: "날개 포즈",
+    emoji: "🦋",
+    instruction: "양팔 V자로 아래쪽 벌리기",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-1.0, 0.8],   // 팔꿈치 비스듬히 아래
+      14: [1.0, 0.8],
+      15: [-1.6, 1.4],   // 손목 더 비스듬히 아래
+      16: [1.6, 1.4]
+    }
+  },
+
+  // ============ 가슴 동작 ============
+  {
+    id: "sample_arms_cross",
+    name: "팔짱 끼기",
+    emoji: "🫂",
+    instruction: "가슴 앞에서 양팔 교차",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.7, 0.5],
+      14: [0.7, 0.5],
+      15: [0.4, 0.6],    // 양손목이 반대편으로 교차
+      16: [-0.4, 0.6]
+    }
+  },
+  {
+    id: "sample_heart",
+    name: "하트 만들기",
+    emoji: "❤️",
+    instruction: "양손으로 가슴에 하트 모양",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.5, 0.5],
+      14: [0.5, 0.5],
+      15: [-0.15, 0.6],  // 양손 가슴 가운데로 모임
+      16: [0.15, 0.6]
+    }
+  },
+  {
+    id: "sample_clap",
+    name: "박수",
+    emoji: "👏",
+    instruction: "가슴 앞에서 양손 모으기",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.4, 0.4],
+      14: [0.4, 0.4],
+      15: [0.0, 0.4],    // 양손이 한 점에 모임
+      16: [0.0, 0.4]
+    }
+  },
+
+  // ============ 머리/얼굴 근처 ============
+  {
+    id: "sample_hands_on_head",
+    name: "머리 위 양손",
+    emoji: "💁",
+    instruction: "양손을 머리 위에 올려놓기",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.7, -0.6],
+      14: [0.7, -0.6],
+      15: [-0.3, -1.5],  // 머리 위 가까이
+      16: [0.3, -1.5]
+    }
+  },
+  {
+    id: "sample_hands_on_ears",
+    name: "양손 귀 옆",
+    emoji: "🙉",
+    instruction: "양손을 귀 옆에",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.7, -0.5],
+      14: [0.7, -0.5],
+      15: [-0.4, -1.1],  // 귀 옆 (코 높이 정도)
+      16: [0.4, -1.1]
+    }
+  },
+  {
+    id: "sample_thinker",
+    name: "생각하는 자세",
+    emoji: "🤔",
+    instruction: "한 손을 턱에 (왼손 턱)",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.4, -0.3],
+      14: [0.5, 0.8],
+      15: [-0.1, -0.9],  // 왼손이 얼굴 근처
+      16: [0.5, 1.5]
+    }
+  },
+
+  // ============ 어깨/대각선 동작 ============
+  {
+    id: "sample_self_hug",
+    name: "셀프 허그",
+    emoji: "🤗",
+    instruction: "양손으로 반대편 어깨 잡기",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.3, 0.3],
+      14: [0.3, 0.3],
+      15: [0.5, 0.0],    // 왼손이 오른어깨로
+      16: [-0.5, 0.0]    // 오른손이 왼어깨로
+    }
+  },
+  {
+    id: "sample_left_to_right_shoulder",
+    name: "왼손→오른어깨",
+    emoji: "💆",
+    instruction: "왼손을 오른쪽 어깨에",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.2, 0.2],
+      14: [0.5, 0.8],
+      15: [0.5, 0.0],    // 왼손이 오른어깨에 닿음
+      16: [0.5, 1.5]
+    }
+  },
+
+  // ============ 댄스 자세 ============
+  {
+    id: "sample_disco",
+    name: "디스코 포인트",
+    emoji: "🕺",
+    instruction: "오른손 위, 왼손 아래 (디스코)",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-0.5, 0.7],
+      14: [0.7, -0.7],   // 오른팔 위로 비스듬히
+      15: [-0.6, 1.3],   // 왼손은 골반 옆
+      16: [1.0, -1.6]    // 오른손 위 비스듬히
+    }
+  },
+  {
+    id: "sample_workout",
+    name: "양팔 L자 (알통)",
+    emoji: "💪",
+    instruction: "양팔 직각으로 굽혀 위로!",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-1.0, 0],     // 팔꿈치가 어깨 옆 (수평)
+      14: [1.0, 0],
+      15: [-1.0, -1.0],  // 손목이 팔꿈치 위
+      16: [1.0, -1.0]
+    }
+  },
+  {
+    id: "sample_finale",
+    name: "피날레",
+    emoji: "🎉",
+    instruction: "양손 활짝 위로!",
+    coords: {
+      0:  [0, -1.2],
+      11: [-0.5, 0],
+      12: [0.5, 0],
+      13: [-1.0, -0.9],
+      14: [1.0, -0.9],
+      15: [-1.4, -1.9],  // Y보다 살짝 좁고 finale 느낌
+      16: [1.4, -1.9]
     }
   }
-};
-
-// ============ 싱글 모드용 기본 포즈 (간략화) ============
-export const POSES = [
-  POSE_LIBRARY.both_hands_up,
-  POSE_LIBRARY.t_pose
 ];
 
-// ============ 기본 시퀀스 (예시용) ============
+// 변환: 좌표 → reference pose 객체
+export const SAMPLE_POSES = SAMPLE_POSES_RAW.map(raw => ({
+  id: raw.id,
+  name: raw.name,
+  emoji: raw.emoji,
+  instruction: raw.instruction,
+  isSample: true,
+  referencePose: makePose(raw.coords),
+  createdAt: "sample"
+}));
+
+// ============ 하위 호환성: POSE_LIBRARY (id로 접근) ============
+export const POSE_LIBRARY = {};
+SAMPLE_POSES.forEach(p => {
+  POSE_LIBRARY[p.id] = createCustomPose(p);
+});
+
+// ============ 싱글 모드용 ============
+export const POSES = SAMPLE_POSES.slice(0, 15).map(p => createCustomPose(p));
+
+// ============ 기본 시퀀스 ============
 export const SEQUENCES = [
   {
     id: "demo",
     name: "기본 데모 ✨",
-    description: "양손올리기 → T포즈",
+    description: "샘플 동작 4개",
     difficulty: "easy",
     stepHoldMs: 400,
     stepWindowMs: 4000,
-    steps: ["both_hands_up", "t_pose"]
+    steps: ["sample_both_up", "sample_t_pose", "sample_left_up", "sample_right_up"]
   }
 ];

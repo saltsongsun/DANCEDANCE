@@ -6,7 +6,7 @@ import {
 
 import {
   POSES, POSE_LIBRARY, SEQUENCES, READY_POSE,
-  normalizePose, createCustomPose
+  SAMPLE_POSES, normalizePose, createCustomPose
 } from "/poses.js";
 
 // ============ DOM ============
@@ -610,11 +610,18 @@ function leaveCurrentScreen() {
 
 // ============ 빌더 / 시퀀스 ============
 function buildAllAvailablePoses() {
+  // POSE_LIBRARY에는 이미 SAMPLE_POSES가 포함됨
   const all = { ...POSE_LIBRARY };
   loadCustomPoses().forEach(cp => {
     all[cp.id] = createCustomPose(cp);
   });
   return all;
+}
+
+// 모든 샘플 + 커스텀 포즈를 배열로
+function getAllPosesArray() {
+  const customPoses = loadCustomPoses().map(cp => createCustomPose(cp));
+  return [...SAMPLE_POSES.map(p => createCustomPose(p)), ...customPoses];
 }
 
 function enterSequenceScreen() {
@@ -631,6 +638,7 @@ function enterSequenceScreen() {
 }
 
 function renderPoseLibraries() {
+  // 내 동작 (사용자 녹화)
   const customPoses = loadCustomPoses();
   myPosesGrid.innerHTML = "";
   if (customPoses.length === 0) {
@@ -650,8 +658,10 @@ function renderPoseLibraries() {
       myPosesGrid.appendChild(card);
     });
   }
+
+  // 샘플 동작 (20개) - "기본 동작" 섹션에 표시
   defaultPosesGrid.innerHTML = "";
-  Object.values(POSE_LIBRARY).forEach(pose => {
+  SAMPLE_POSES.forEach(pose => {
     const card = document.createElement("button");
     card.className = "pose-lib-card";
     card.innerHTML = `<div class="pose-lib-emoji">${pose.emoji}</div><div class="pose-lib-name">${pose.name}</div>`;
@@ -774,24 +784,19 @@ function playRoutine(routine) {
 
 // ============ 챌린지 모드 ============
 function enterChallengeSetup() {
-  const customPoses = loadCustomPoses();
-  if (customPoses.length === 0) {
-    if (confirm("저장된 동작이 없어요. 먼저 동작을 녹화할까요?")) {
-      enterRecordScreen();
-    }
-    return;
-  }
+  // 샘플 20개가 있으니 항상 시작 가능
   showScreen(challengeSetupScreen);
 }
 
 function startChallenge() {
+  // 샘플 + 커스텀 모두 사용
   const customPoses = loadCustomPoses();
-  if (customPoses.length === 0) return;
-
-  // 랜덤 동작 선택 (저장된 동작 + 기본 동작 풀)
-  const allIds = [...customPoses.map(p => p.id), ...Object.keys(POSE_LIBRARY)];
-  const shuffled = allIds.sort(() => Math.random() - 0.5);
-  const targetCount = Math.min(challengeCount, shuffled.length * 3); // 같은 동작 반복 가능
+  const allIds = [
+    ...SAMPLE_POSES.map(p => p.id),
+    ...customPoses.map(p => p.id)
+  ];
+  const shuffled = [...allIds].sort(() => Math.random() - 0.5);
+  const targetCount = challengeCount;
   const steps = [];
   for (let i = 0; i < targetCount; i++) {
     steps.push(shuffled[i % shuffled.length]);
@@ -817,24 +822,17 @@ function startChallenge() {
 
 // ============ 리듬 모드 ============
 function enterRhythmSetup() {
-  const customPoses = loadCustomPoses();
-  if (customPoses.length === 0) {
-    if (confirm("저장된 동작이 없어요. 먼저 동작을 녹화할까요?")) {
-      enterRecordScreen();
-    }
-    return;
-  }
   showScreen(rhythmSetupScreen);
 }
 
 function startRhythm() {
   const customPoses = loadCustomPoses();
-  const allIds = [...customPoses.map(p => p.id), ...Object.keys(POSE_LIBRARY)];
-
-  // 비트 간격 (ms)
+  const allIds = [
+    ...SAMPLE_POSES.map(p => p.id),
+    ...customPoses.map(p => p.id)
+  ];
   const beatInterval = 60000 / rhythmBPM;
 
-  // 노트 데이터 생성
   rhythmNotesData = [];
   for (let i = 0; i < rhythmTotalBeats; i++) {
     rhythmNotesData.push({
@@ -979,13 +977,6 @@ function showRhythmJudgement(text, cls) {
 
 // ============ 거울 모드 ============
 function enterMirrorSetup() {
-  const customPoses = loadCustomPoses();
-  if (customPoses.length === 0) {
-    if (confirm("저장된 동작이 없어요. 먼저 동작을 녹화할까요?")) {
-      enterRecordScreen();
-    }
-    return;
-  }
   showScreen(mirrorSetupScreen);
 }
 
@@ -995,12 +986,12 @@ function startMirror() {
   mode = "mirror";
 
   const customPoses = loadCustomPoses();
-  const allIds = [...customPoses.map(p => p.id), ...Object.keys(POSE_LIBRARY)];
-
-  // 첫 동작 추가
+  const allIds = [
+    ...SAMPLE_POSES.map(p => p.id),
+    ...customPoses.map(p => p.id)
+  ];
   mirrorSequence.push(allIds[Math.floor(Math.random() * allIds.length)]);
 
-  // 임시 시퀀스 (게임 화면 진입을 위해)
   selectedSequence = {
     id: "mirror_" + Date.now(),
     name: "🪞 거울 모드",
@@ -1077,7 +1068,10 @@ async function mirrorAdvance(success) {
     await sleep(1000);
 
     const customPoses = loadCustomPoses();
-    const allIds = [...customPoses.map(p => p.id), ...Object.keys(POSE_LIBRARY)];
+    const allIds = [
+      ...SAMPLE_POSES.map(p => p.id),
+      ...customPoses.map(p => p.id)
+    ];
     mirrorSequence.push(allIds[Math.floor(Math.random() * allIds.length)]);
     await startMirrorRound();
   } else {
