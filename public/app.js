@@ -118,12 +118,11 @@ const startMirrorBtn = document.getElementById("startMirrorBtn");
 
 // ============ 정확도 설정 ============
 const CONFIG = {
-  modelType: 'heavy', // full → heavy (30MB, 정확도 향상)
+  modelType: 'heavy',
   visualSmoothing: 0.4,
   voteFrames: 5,
-  voteThreshold: 1,
-  passDebounceMs: 600,
-  // heavy 모델용 신뢰도 (조금 높여도 안정적으로 잡힘)
+  voteThreshold: 2, // 1 → 2 (튀는 인식 차단, 자동 통과 방지)
+  passDebounceMs: 200, // 600 → 200 (잔여 효과 짧게)
   minDetectionConfidence: 0.5,
   minPresenceConfidence: 0.5,
   minTrackingConfidence: 0.5,

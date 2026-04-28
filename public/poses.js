@@ -97,9 +97,9 @@ export function createCustomPose(customData) {
       }
       const d = poseDistance(currentNorm, customData.referencePose);
       const isSampleData = customData.isSample === true;
-      // 진입 1.7, 유지 2.1
-      const enterThreshold = 1.7;
-      const exitThreshold = 2.1;
+      // 어린이 친화 - 진입 1.9, 유지 2.3
+      const enterThreshold = 1.9;
+      const exitThreshold = 2.3;
       const threshold = isHolding ? exitThreshold : enterThreshold;
       const debug = `유사도=${d.toFixed(3)} 필요<${threshold} ${isSampleData ? '(sample)' : '(user)'}`;
       if (d < threshold) {
@@ -290,10 +290,10 @@ const SAMPLE_POSES_RAW = [
       0:  [0, -1.5],
       11: [-0.5, 0],
       12: [0.5, 0],
-      13: [-1.5, 0],
-      14: [0.7, 1.0],
-      15: [-2.5, 0],
-      16: [0.6, 1.8]
+      13: [-1.0, 0],     // 왼팔꿈치 안쪽
+      14: [0.6, 1.0],    // 오른팔 자연스럽게 내림
+      15: [-1.5, 0],     // 왼손목 - 살짝 짧아도 OK
+      16: [0.6, 1.7]     // 오른손목 자연스럽게
     }
   },
   {
@@ -305,10 +305,10 @@ const SAMPLE_POSES_RAW = [
       0:  [0, -1.5],
       11: [-0.5, 0],
       12: [0.5, 0],
-      13: [-0.7, 1.0],
-      14: [1.5, 0],
-      15: [-0.6, 1.8],
-      16: [2.5, 0]
+      13: [-0.6, 1.0],   // 왼팔 자연스럽게 내림
+      14: [1.0, 0],      // 오른팔꿈치 안쪽
+      15: [-0.6, 1.7],   // 왼손목 자연스럽게
+      16: [1.5, 0]       // 오른손목 - 살짝 짧아도 OK
     }
   },
   {
