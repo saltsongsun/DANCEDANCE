@@ -1,379 +1,1272 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#0f0f14" />
-  <title>🕺 Dance Pose</title>
-  <link rel="stylesheet" href="/styles.css" />
-</head>
-<body>
-  <div id="app">
-    <!-- 시작 화면 -->
-    <div id="startScreen" class="screen active">
-      <div class="start-content">
-        <h1>🕺 Dance Pose</h1>
-        <p class="subtitle">나만의 춤을 만들고 게임처럼 즐기세요</p>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
 
-        <div class="section-label">🛠 만들기</div>
-        <div class="mode-grid mode-grid-2">
-          <button class="mode-card" data-mode="record">
-            <div class="mode-emoji">🎥</div>
-            <div class="mode-title">동작 녹화</div>
-            <div class="mode-desc">5초 후 캡쳐</div>
-          </button>
-          <button class="mode-card" data-mode="builder">
-            <div class="mode-emoji">💃</div>
-            <div class="mode-title">루틴 만들기</div>
-            <div class="mode-desc">시퀀스 빌더</div>
-          </button>
-        </div>
+:root {
+  --bg: #0f0f14;
+  --bg-elev: #1a1a24;
+  --bg-elev2: #242434;
+  --text: #ffffff;
+  --text-dim: #a0a0b8;
+  --primary: #7c5cff;
+  --primary-hover: #6a4cef;
+  --success: #00ffa3;
+  --error: #ff5c7c;
+  --warning: #ffcc5c;
+  --combo: #ffd700;
+  --record: #ff3b3b;
+  --challenge: #ff7c5c;
+  --rhythm: #5cffe5;
+  --mirror: #c45cff;
+}
 
-        <div class="section-label">🎮 게임 모드</div>
-        <div class="mode-grid mode-grid-game">
-          <button class="mode-card mode-card-game challenge" data-mode="challenge">
-            <div class="mode-emoji">🎯</div>
-            <div class="mode-title">챌린지</div>
-            <div class="mode-desc">랜덤 동작 출제 · 별점 도전</div>
-          </button>
-          <button class="mode-card mode-card-game rhythm" data-mode="rhythm">
-            <div class="mode-emoji">🎵</div>
-            <div class="mode-title">리듬</div>
-            <div class="mode-desc">박자에 맞춰 동작</div>
-          </button>
-          <button class="mode-card mode-card-game mirror" data-mode="mirror">
-            <div class="mode-emoji">🪞</div>
-            <div class="mode-title">거울 모드</div>
-            <div class="mode-desc">본 대로 따라하기 (기억력)</div>
-          </button>
-        </div>
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
 
-        <div id="bestScoreBox" class="best-score-box hidden">
-          <div class="best-score-title">🏆 최고 기록</div>
-          <div id="bestScoreList" class="best-score-list"></div>
-        </div>
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Pretendard', 'Noto Sans KR', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
 
-        <div class="info-box">
-          <p>✨ <b>샘플 동작 20개</b>가 미리 들어있어 바로 게임 가능!</p>
-          <p>📷 직접 동작을 녹화하면 더 다양해져요</p>
-          <p>💡 상체가 보이도록 한 걸음 물러서기</p>
-        </div>
-      </div>
-    </div>
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+}
 
-    <!-- 동작 녹화 -->
-    <div id="recordScreen" class="screen">
-      <div class="record-top">
-        <button class="back-btn" data-back="start">← 뒤로</button>
-        <h2 class="record-title">새 동작 녹화</h2>
-      </div>
-      <div class="record-video-container">
-        <video id="recordVideo" autoplay playsinline muted></video>
-        <canvas id="recordCanvas"></canvas>
-        <div id="recordCountdown" class="record-countdown hidden">
-          <div id="recordCountdownNumber" class="record-countdown-number">5</div>
-          <div class="record-countdown-text">자세를 잡으세요!</div>
-        </div>
-        <div id="captureFlash" class="capture-flash hidden"></div>
-        <div id="recordLoadingOverlay" class="loading-overlay">
-          <div class="spinner"></div>
-          <div id="recordLoadingText">카메라 준비 중...</div>
-        </div>
-        <div id="capturedPreview" class="captured-preview hidden">
-          <svg id="capturedSvg" viewBox="-2 -2 4 4" class="captured-svg"></svg>
-          <div class="captured-label">✨ 동작이 캡쳐되었어요!</div>
-        </div>
-      </div>
-      <div class="record-form" id="recordForm">
-        <div class="form-row">
-          <button id="recordBtn" class="record-btn">
-            <span class="record-btn-icon">🔴</span>
-            <span class="record-btn-text">5초 후 녹화</span>
-          </button>
-        </div>
-        <div id="recordFormFields" class="form-fields hidden">
-          <div class="form-field">
-            <label>동작 이름</label>
-            <input type="text" id="customName" placeholder="예: 내 시그니처 무브" maxlength="20" />
-          </div>
-          <div class="form-field">
-            <label>이모지 선택</label>
-            <div id="emojiPicker" class="emoji-picker"></div>
-          </div>
-          <div class="form-field">
-            <label>동작 설명</label>
-            <textarea id="customInstruction" placeholder="예: 양손을 비스듬히 위로" rows="2" maxlength="60"></textarea>
-          </div>
-          <div class="form-buttons">
-            <button id="recordRetryBtn" class="builder-btn-secondary">다시 녹화</button>
-            <button id="recordSaveBtn" class="primary-btn" disabled>저장</button>
-          </div>
-        </div>
-      </div>
-      <div class="saved-poses-section">
-        <div class="saved-poses-header">
-          <h3>저장된 내 동작 <span id="savedPoseCount" class="count-badge">0</span></h3>
-        </div>
-        <div id="savedPosesList" class="saved-poses-grid"></div>
-      </div>
-    </div>
+.screen {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.screen.active { display: flex; opacity: 1; }
+.hidden { display: none !important; }
 
-    <!-- 시퀀스/빌더 -->
-    <div id="sequenceSelectScreen" class="screen">
-      <div class="start-content">
-        <button class="back-btn" data-back="start">← 뒤로</button>
-        <h2 class="section-title">루틴 만들기</h2>
+/* ============ 시작 화면 ============ */
+#startScreen, #sequenceSelectScreen,
+#challengeSetupScreen, #rhythmSetupScreen, #mirrorSetupScreen {
+  justify-content: flex-start;
+  align-items: center;
+  padding: 32px 20px 60px;
+  background: radial-gradient(ellipse at top, #2a1f4a 0%, var(--bg) 60%);
+  overflow-y: auto;
+}
 
-        <div class="builder-current">
-          <div class="builder-current-label">내 시퀀스 <span id="builderStepCount">(0개)</span></div>
-          <div id="builderSteps" class="builder-steps">
-            <div class="builder-empty">아래에서 동작을 추가하세요</div>
-          </div>
-          <div class="builder-controls">
-            <input type="text" id="routineName" class="routine-name-input" placeholder="루틴 이름" maxlength="20" />
-            <div class="builder-buttons">
-              <button id="builderClearBtn" class="builder-btn-secondary">초기화</button>
-              <button id="builderPlayBtn" class="primary-btn" disabled>▶ 따라하기</button>
-            </div>
-            <div class="builder-buttons">
-              <button id="builderSaveBtn" class="builder-btn-secondary" disabled>💾 루틴 저장</button>
-            </div>
-            <div class="builder-difficulty">
-              <span class="builder-diff-label">속도:</span>
-              <button class="diff-btn active" data-diff="easy">느리게</button>
-              <button class="diff-btn" data-diff="medium">보통</button>
-              <button class="diff-btn" data-diff="hard">빠르게</button>
-            </div>
-          </div>
-        </div>
+.start-content {
+  text-align: center;
+  max-width: 480px;
+  width: 100%;
+  padding-top: 16px;
+}
 
-        <div class="section-label">내 동작 (탭하여 추가)</div>
-        <div id="myPosesGrid" class="pose-library-grid"></div>
-        <div id="myPosesEmpty" class="pose-empty">
-          저장된 동작이 없어요. <br>
-          <button class="link-btn" data-mode="record">새 동작 녹화하기 →</button>
-        </div>
-        <div class="section-label">샘플 동작 20개 ✨</div>
-        <div id="defaultPosesGrid" class="pose-library-grid"></div>
+.start-content h1 {
+  font-size: clamp(2rem, 8vw, 3rem);
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
 
-        <div id="savedRoutinesSection" class="hidden">
-          <div class="section-label">저장된 내 루틴</div>
-          <div id="savedRoutinesList" class="sequence-list"></div>
-        </div>
-      </div>
-    </div>
+.section-title { font-size: 1.5rem; margin: 24px 0 16px; font-weight: 700; }
+.section-label {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  text-align: left;
+  margin: 16px 0 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.subtitle { color: var(--text-dim); font-size: 1rem; margin-bottom: 24px; }
 
-    <!-- 챌린지 설정 화면 -->
-    <div id="challengeSetupScreen" class="screen">
-      <div class="start-content">
-        <button class="back-btn" data-back="start">← 뒤로</button>
-        <h2 class="section-title">🎯 챌린지 모드</h2>
-        <p class="subtitle">랜덤 동작에 도전!</p>
+.back-btn {
+  background: var(--bg-elev);
+  color: var(--text);
+  border: none;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 5;
+}
+.back-btn:hover { background: var(--bg-elev2); }
 
-        <div class="setup-card">
-          <div class="setup-row">
-            <label class="setup-label">동작 수</label>
-            <div class="setup-options">
-              <button class="setup-btn active" data-count="5">5개</button>
-              <button class="setup-btn" data-count="10">10개</button>
-              <button class="setup-btn" data-count="15">15개</button>
-            </div>
-          </div>
-          <div class="setup-row">
-            <label class="setup-label">난이도</label>
-            <div class="setup-options">
-              <button class="setup-btn active" data-challenge-diff="easy">쉬움</button>
-              <button class="setup-btn" data-challenge-diff="medium">보통</button>
-              <button class="setup-btn" data-challenge-diff="hard">어려움</button>
-            </div>
-          </div>
-        </div>
+/* 모드 카드 */
+.mode-grid { display: grid; gap: 10px; margin-bottom: 16px; }
+.mode-grid-2 { grid-template-columns: 1fr 1fr; }
+.mode-grid-game { grid-template-columns: 1fr 1fr 1fr; }
 
-        <div class="game-rules">
-          <p>⏱ 동작당 제한시간 안에 자세 잡기</p>
-          <p>⭐ 정확도와 속도로 별점 계산</p>
-          <p>🔥 연속 성공 시 콤보 보너스</p>
-        </div>
+.mode-card {
+  background: var(--bg-elev);
+  border: 2px solid transparent;
+  color: var(--text);
+  padding: 16px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  font-family: inherit;
+}
+.mode-card:hover {
+  border-color: var(--primary);
+  background: var(--bg-elev2);
+  transform: translateY(-2px);
+}
+.mode-card:active { transform: scale(0.97); }
 
-        <button id="startChallengeBtn" class="primary-btn">시작!</button>
-      </div>
-    </div>
+.mode-card-game {
+  padding: 14px 6px;
+  background: linear-gradient(135deg, var(--bg-elev) 0%, var(--bg-elev2) 100%);
+}
+.mode-card-game.challenge:hover { border-color: var(--challenge); }
+.mode-card-game.rhythm:hover { border-color: var(--rhythm); }
+.mode-card-game.mirror:hover { border-color: var(--mirror); }
 
-    <!-- 리듬 설정 화면 -->
-    <div id="rhythmSetupScreen" class="screen">
-      <div class="start-content">
-        <button class="back-btn" data-back="start">← 뒤로</button>
-        <h2 class="section-title">🎵 리듬 모드</h2>
-        <p class="subtitle">박자에 맞춰 동작!</p>
+.mode-emoji { font-size: 2rem; margin-bottom: 6px; line-height: 1; }
+.mode-card-game .mode-emoji { font-size: 2.2rem; }
+.mode-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 3px; }
+.mode-card-game .mode-title { font-size: 0.9rem; }
+.mode-desc { font-size: 0.7rem; color: var(--text-dim); line-height: 1.3; }
 
-        <div class="setup-card">
-          <div class="setup-row">
-            <label class="setup-label">BPM (박자)</label>
-            <div class="setup-options">
-              <button class="setup-btn active" data-bpm="60">60 (느림)</button>
-              <button class="setup-btn" data-bpm="80">80 (보통)</button>
-              <button class="setup-btn" data-bpm="100">100 (빠름)</button>
-            </div>
-          </div>
-          <div class="setup-row">
-            <label class="setup-label">총 비트 수</label>
-            <div class="setup-options">
-              <button class="setup-btn active" data-beats="8">8 비트</button>
-              <button class="setup-btn" data-beats="16">16 비트</button>
-              <button class="setup-btn" data-beats="32">32 비트</button>
-            </div>
-          </div>
-        </div>
+/* 최고 점수 박스 */
+.best-score-box {
+  background: var(--bg-elev);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 16px;
+  text-align: left;
+  border: 1px solid rgba(255, 215, 0, 0.2);
+}
+.best-score-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--combo);
+  margin-bottom: 8px;
+}
+.best-score-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+.best-score-row {
+  display: flex;
+  justify-content: space-between;
+}
+.best-score-row b { color: var(--text); }
 
-        <div class="game-rules">
-          <p>🎵 비트마다 동작이 떨어져요</p>
-          <p>🟢 Perfect: 정확히 박자에 맞췄을 때</p>
-          <p>🟡 Good: 살짝 빗나갔을 때</p>
-          <p>🔴 Miss: 못 맞췄을 때</p>
-        </div>
+/* 정보 박스 */
+.info-box {
+  background: var(--bg-elev);
+  border-radius: 14px;
+  padding: 14px;
+  text-align: left;
+}
+.info-box p { padding: 4px 0; font-size: 0.85rem; color: var(--text-dim); }
 
-        <button id="startRhythmBtn" class="primary-btn">시작!</button>
-      </div>
-    </div>
+/* ============ 설정 화면 (챌린지/리듬) ============ */
+.setup-card {
+  background: var(--bg-elev);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
 
-    <!-- 거울 모드 설정 -->
-    <div id="mirrorSetupScreen" class="screen">
-      <div class="start-content">
-        <button class="back-btn" data-back="start">← 뒤로</button>
-        <h2 class="section-title">🪞 거울 모드</h2>
-        <p class="subtitle">본 대로 기억해서 따라하기</p>
+.setup-row {
+  margin-bottom: 14px;
+  text-align: left;
+}
+.setup-row:last-child { margin-bottom: 0; }
 
-        <div class="game-rules">
-          <p>1. 동작이 짧게 보이고 사라져요 👀</p>
-          <p>2. 본 대로 카메라 앞에서 따라해요 💃</p>
-          <p>3. 라운드마다 동작이 1개씩 늘어요 (1→2→3...)</p>
-          <p>4. 라운드 안에서 모두 성공해야 다음 라운드! ✨</p>
-          <p>5. 미스해도 동작은 계속 이어져요 🔄</p>
-        </div>
+.setup-label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
 
-        <button id="startMirrorBtn" class="primary-btn">시작!</button>
-      </div>
-    </div>
+.setup-options {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 
-    <!-- 게임 화면 -->
-    <div id="gameScreen" class="screen">
-      <div id="missionCard" class="mission-card">
-        <div class="mission-header">
-          <span id="stepLabel" class="mission-step">준비</span>
-          <span id="comboBadge" class="combo-badge hidden">🔥 <span id="comboCount">0</span> combo</span>
-          <span id="scoreBadge" class="score-badge hidden">⭐ <span id="scoreNum">0</span></span>
-        </div>
-        <div class="mission-body">
-          <div id="poseEmoji" class="mission-emoji">🙌</div>
-          <div class="mission-text-area">
-            <div id="poseName" class="mission-name">준비 중...</div>
-            <div id="poseInstruction" class="mission-instruction">카메라 앞에 서주세요</div>
-          </div>
-        </div>
-        <div class="progress-bar">
-          <div id="progressFill" class="progress-fill"></div>
-        </div>
-      </div>
+.setup-btn {
+  flex: 1;
+  min-width: 80px;
+  padding: 10px;
+  background: var(--bg);
+  color: var(--text-dim);
+  border: 1px solid var(--bg-elev2);
+  border-radius: 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+}
+.setup-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
 
-      <div class="video-container">
-        <video id="video" autoplay playsinline muted></video>
-        <canvas id="canvas"></canvas>
+.game-rules {
+  background: var(--bg-elev);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 24px;
+  text-align: left;
+}
+.game-rules p {
+  padding: 4px 0;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
 
-        <div id="sequencePreview" class="sequence-preview hidden"></div>
-        <div id="stepCountdown" class="step-countdown hidden">
-          <div id="stepCountdownText" class="step-countdown-text">3.0</div>
-        </div>
+.primary-btn {
+  width: 100%;
+  padding: 14px 24px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.primary-btn:hover { background: var(--primary-hover); }
+.primary-btn:active { transform: scale(0.98); }
+.primary-btn:disabled { background: #444; cursor: not-allowed; opacity: 0.5; }
 
-        <!-- 리듬 모드 트랙 -->
-        <div id="rhythmTrack" class="rhythm-track hidden">
-          <div class="rhythm-judge-line"></div>
-          <div id="rhythmNotes" class="rhythm-notes"></div>
-          <div id="rhythmJudgement" class="rhythm-judgement hidden"></div>
-        </div>
+/* ============ 녹화 ============ */
+#recordScreen {
+  background: var(--bg);
+  flex-direction: column;
+  overflow-y: auto;
+}
 
-        <!-- 거울 모드: 본 시퀀스 표시 -->
-        <div id="mirrorShowing" class="mirror-showing hidden">
-          <div class="mirror-showing-label">기억하세요!</div>
-          <div id="mirrorShowingEmoji" class="mirror-showing-emoji">🙌</div>
-          <div id="mirrorShowingName" class="mirror-showing-name">양손 번쩍</div>
-          <div id="mirrorShowingProgress" class="mirror-showing-progress">1 / 3</div>
-        </div>
+.record-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 16px 8px;
+  position: relative;
+}
+.record-top .back-btn { position: relative; top: 0; left: 0; }
+.record-title { font-size: 1.2rem; font-weight: 700; flex: 1; }
 
-        <div id="readyBanner" class="ready-banner">
-          <div class="ready-banner-inner">
-            <div class="ready-icon">🙌</div>
-            <div id="readyBannerText" class="ready-banner-text">카메라 앞에 서주세요</div>
-          </div>
-        </div>
+.record-video-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-height: 50vh;
+  background: #000;
+  overflow: hidden;
+  flex-shrink: 0;
+}
 
-        <div id="missionPreview" class="mission-preview hidden">
-          <div class="mission-preview-inner">
-            <div id="previewEmoji" class="preview-emoji">🙌</div>
-            <div id="previewName" class="preview-name">양손 번쩍</div>
-            <div id="previewInstruction" class="preview-instruction">양손을 머리 위로!</div>
-            <div id="previewCountdown" class="preview-countdown">3</div>
-          </div>
-        </div>
+#recordVideo, #recordCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(-1);
+  object-fit: contain;
+  background: #000;
+}
 
-        <div id="debugPanel" class="debug-panel hidden"></div>
-        <div class="debug-controls">
-          <button id="debugToggle" class="debug-btn">🐛 Debug</button>
-          <button id="skipBtn" class="debug-btn">⏭ 건너뛰기</button>
-        </div>
+.record-countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+}
+.record-countdown-number {
+  font-size: clamp(7rem, 30vw, 12rem);
+  font-weight: 900;
+  color: var(--record);
+  text-shadow: 0 0 40px rgba(255, 59, 59, 0.8);
+  line-height: 1;
+  animation: recordPulse 1s ease infinite;
+}
+@keyframes recordPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.9; }
+}
+.record-countdown-text { font-size: 1.1rem; color: white; font-weight: 600; margin-top: 16px; }
 
-        <div id="holdTimer" class="hold-timer hidden">
-          <svg viewBox="0 0 100 100">
-            <circle class="timer-bg" cx="50" cy="50" r="45"></circle>
-            <circle id="timerCircle" class="timer-fg" cx="50" cy="50" r="45"></circle>
-          </svg>
-          <div id="timerText" class="timer-text">0.0</div>
-        </div>
+.capture-flash {
+  position: absolute;
+  inset: 0;
+  background: white;
+  z-index: 11;
+  animation: flash 0.4s ease;
+}
+@keyframes flash { 0% { opacity: 0; } 20% { opacity: 1; } 100% { opacity: 0; } }
 
-        <div id="successOverlay" class="success-overlay hidden">
-          <div class="success-text">✨ 성공! ✨</div>
-        </div>
-        <div id="missOverlay" class="miss-overlay hidden">
-          <div class="miss-text">❌ Miss!</div>
-        </div>
-        <div id="loadingOverlay" class="loading-overlay">
-          <div class="spinner"></div>
-          <div id="loadingText">AI 모델 로딩 중...</div>
-        </div>
-      </div>
+.captured-preview {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 255, 163, 0.1);
+  backdrop-filter: blur(8px);
+  z-index: 10;
+  animation: capturedShow 0.4s ease;
+}
+@keyframes capturedShow {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
 
-      <div class="bottom-bar">
-        <div id="feedback" class="feedback">카메라 앞에 서주세요</div>
-      </div>
-    </div>
+.captured-svg {
+  width: 60%;
+  max-width: 220px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 16px;
+  padding: 12px;
+  border: 2px solid var(--success);
+}
+.captured-label { margin-top: 12px; font-size: 1rem; font-weight: 700; color: var(--success); }
 
-    <!-- 완료 -->
-    <div id="endScreen" class="screen">
-      <div class="end-content">
-        <div class="celebration" id="endCelebration">🎉</div>
-        <h1 id="endTitle">수고하셨어요!</h1>
-        <p id="endSubtitle" class="subtitle">완료했습니다</p>
-        <div id="starsRow" class="stars-row hidden">
-          <span class="star">⭐</span>
-          <span class="star">⭐</span>
-          <span class="star">⭐</span>
-        </div>
-        <div class="stats">
-          <div class="stat">
-            <div class="stat-label">소요 시간</div>
-            <div id="totalTime" class="stat-value">0초</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">점수</div>
-            <div id="totalScore" class="stat-value">0점</div>
-          </div>
-        </div>
-        <div id="extraStats" class="extra-stats hidden"></div>
-        <div id="endBestBadge" class="end-best-badge hidden">🏆 신기록!</div>
-        <button id="restartBtn" class="primary-btn">처음으로</button>
-      </div>
-    </div>
-  </div>
+.record-form { padding: 16px; background: var(--bg); flex-shrink: 0; }
+.form-row { margin-bottom: 12px; }
 
-  <script type="module" src="/app.js"></script>
-</body>
-</html>
+.record-btn {
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--record), #ff6b6b);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: inherit;
+  box-shadow: 0 4px 16px rgba(255, 59, 59, 0.3);
+}
+.record-btn:active { transform: scale(0.98); }
+.record-btn:disabled { opacity: 0.5; background: #444; box-shadow: none; }
+.record-btn-icon { font-size: 1.3rem; }
+
+.form-fields { display: flex; flex-direction: column; gap: 12px; }
+.form-field { text-align: left; }
+.form-field label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.form-field input, .form-field textarea {
+  width: 100%;
+  padding: 12px;
+  background: var(--bg-elev);
+  border: 2px solid var(--bg-elev2);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+}
+.form-field input:focus, .form-field textarea:focus { border-color: var(--primary); }
+
+.emoji-picker {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  background: var(--bg-elev);
+  padding: 8px;
+  border-radius: 10px;
+  border: 2px solid var(--bg-elev2);
+  max-height: 120px;
+  overflow-y: auto;
+}
+.emoji-option {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  font-size: 1.4rem;
+  padding: 4px;
+  cursor: pointer;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.emoji-option:hover { background: var(--bg-elev2); }
+.emoji-option.selected { background: var(--primary); border-color: var(--primary); }
+
+.form-buttons {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.saved-poses-section {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  border-top: 1px solid var(--bg-elev2);
+}
+.saved-poses-header { display: flex; align-items: center; margin-bottom: 12px; }
+.saved-poses-header h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.count-badge {
+  background: var(--primary);
+  color: white;
+  font-size: 0.75rem;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-weight: 700;
+}
+
+.saved-poses-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.saved-pose-card {
+  background: var(--bg-elev);
+  border-radius: 12px;
+  padding: 10px 6px;
+  position: relative;
+  text-align: center;
+}
+.pose-emoji-large { font-size: 2rem; line-height: 1; }
+.pose-card-name { font-size: 0.75rem; font-weight: 600; margin-top: 4px; word-break: break-all; }
+.pose-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(255, 92, 124, 0.9);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.saved-poses-empty {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 30px 10px;
+  font-size: 0.9rem;
+}
+
+/* ============ 빌더 ============ */
+.builder-current {
+  background: var(--bg-elev);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 14px;
+  border: 2px solid rgba(124, 92, 255, 0.3);
+  text-align: left;
+}
+.builder-current-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--text-dim);
+}
+#builderStepCount { color: var(--primary); }
+
+.builder-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 60px;
+  padding: 10px;
+  background: var(--bg);
+  border-radius: 12px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+.builder-empty {
+  width: 100%;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.builder-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-elev2);
+  padding: 8px 6px;
+  border-radius: 10px;
+  position: relative;
+  min-width: 56px;
+  cursor: pointer;
+}
+.builder-step-num { font-size: 0.65rem; color: var(--primary); font-weight: 700; }
+.builder-step-emoji { font-size: 1.5rem; margin: 2px 0; }
+.builder-step-name {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  text-align: center;
+  word-break: break-all;
+}
+
+.builder-controls { display: flex; flex-direction: column; gap: 10px; }
+.routine-name-input {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 2px solid var(--bg-elev2);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+}
+.routine-name-input:focus { border-color: var(--primary); }
+.builder-buttons { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; }
+.builder-btn-secondary {
+  padding: 12px;
+  background: var(--bg-elev2);
+  color: var(--text);
+  border: none;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.builder-btn-secondary:hover { background: #333348; }
+.builder-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.builder-difficulty {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.builder-diff-label { font-size: 0.85rem; color: var(--text-dim); }
+.diff-btn {
+  padding: 6px 12px;
+  background: var(--bg);
+  color: var(--text-dim);
+  border: 1px solid var(--bg-elev2);
+  border-radius: 20px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.diff-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+.pose-library-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.pose-lib-card {
+  background: var(--bg-elev);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 12px 6px;
+  cursor: pointer;
+  text-align: center;
+  color: var(--text);
+}
+.pose-lib-card:hover { border-color: var(--primary); background: var(--bg-elev2); }
+.pose-lib-card.is-custom { border: 2px solid rgba(0, 255, 163, 0.3); }
+.pose-lib-emoji { font-size: 1.8rem; line-height: 1; margin-bottom: 4px; }
+.pose-lib-name { font-size: 0.7rem; font-weight: 600; word-break: break-all; }
+.pose-empty {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 24px 12px;
+  font-size: 0.85rem;
+  background: var(--bg-elev);
+  border-radius: 12px;
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-top: 8px;
+  font-family: inherit;
+}
+
+.sequence-list { display: flex; flex-direction: column; gap: 10px; }
+.sequence-card {
+  background: var(--bg-elev);
+  border: 2px solid transparent;
+  border-radius: 16px;
+  padding: 14px 16px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.sequence-card:hover { border-color: var(--primary); }
+.sequence-info { flex: 1; min-width: 0; }
+.sequence-name { font-size: 1.05rem; font-weight: 700; }
+.sequence-desc { font-size: 0.8rem; color: var(--text-dim); }
+.sequence-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--error);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+/* ============ 게임 ============ */
+#gameScreen { background: #000; overflow: hidden; }
+
+.mission-card {
+  background: linear-gradient(135deg, #1a1a2e 0%, #2a1a3e 100%);
+  padding: 12px 14px;
+  border-bottom: 2px solid rgba(124, 92, 255, 0.3);
+  z-index: 10;
+  position: relative;
+}
+.mission-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mission-step {
+  background: rgba(124, 92, 255, 0.25);
+  color: var(--primary);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.combo-badge {
+  background: linear-gradient(135deg, var(--combo), #ff9500);
+  color: #000;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  animation: comboPulse 0.4s ease;
+}
+.score-badge {
+  background: rgba(255, 215, 0, 0.2);
+  color: var(--combo);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+@keyframes comboPulse {
+  0% { transform: scale(0.8); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+.mission-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+.mission-emoji {
+  font-size: clamp(2.5rem, 11vw, 4rem);
+  line-height: 1;
+  flex-shrink: 0;
+}
+.mission-text-area { flex: 1; min-width: 0; }
+.mission-name {
+  font-size: clamp(1.2rem, 4.5vw, 1.6rem);
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 3px;
+}
+.mission-instruction {
+  font-size: clamp(0.85rem, 3.2vw, 1rem);
+  color: var(--text-dim);
+  line-height: 1.3;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary) 0%, var(--success) 100%);
+  width: 0%;
+  transition: width 0.4s ease;
+}
+
+.video-container {
+  position: relative;
+  flex: 1;
+  background: #000;
+  overflow: hidden;
+  min-height: 0;
+}
+
+video, canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(-1);
+}
+video { object-fit: contain; background: #000; }
+canvas { object-fit: contain; }
+
+.sequence-preview {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  padding: 6px 12px;
+  border-radius: 20px;
+  z-index: 6;
+  max-width: calc(100% - 24px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sequence-preview::-webkit-scrollbar { display: none; }
+
+.seq-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-dim);
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+.seq-dot.current {
+  background: var(--primary);
+  color: white;
+  transform: scale(1.25);
+}
+.seq-dot.done { background: var(--success); color: #000; }
+
+.step-countdown {
+  position: absolute;
+  top: 50px;
+  right: 12px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 2px solid var(--warning);
+  border-radius: 50%;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 6;
+}
+.step-countdown-text { font-size: 1.2rem; font-weight: 800; color: var(--warning); }
+
+/* ============ 리듬 모드 트랙 ============ */
+.rhythm-track {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 380px;
+  height: 100px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  border: 1px solid rgba(92, 255, 229, 0.3);
+  z-index: 5;
+  overflow: hidden;
+}
+
+.rhythm-judge-line {
+  position: absolute;
+  bottom: 0;
+  left: 16px;
+  width: 60px;
+  height: 100%;
+  background: linear-gradient(180deg, transparent, rgba(92, 255, 229, 0.3));
+  border-right: 2px solid var(--rhythm);
+  box-shadow: 0 0 20px var(--rhythm);
+  z-index: 2;
+}
+
+.rhythm-notes {
+  position: absolute;
+  inset: 0;
+}
+
+.rhythm-note {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 56px;
+  height: 56px;
+  background: linear-gradient(135deg, var(--rhythm), #aaffee);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  box-shadow: 0 0 20px rgba(92, 255, 229, 0.6);
+  will-change: left;
+  border: 2px solid white;
+}
+
+.rhythm-note.judged-perfect {
+  animation: judgedPerfect 0.4s ease forwards;
+}
+.rhythm-note.judged-good {
+  animation: judgedGood 0.4s ease forwards;
+}
+.rhythm-note.judged-miss {
+  animation: judgedMiss 0.4s ease forwards;
+}
+
+@keyframes judgedPerfect {
+  to { transform: translateY(-50%) scale(1.5); opacity: 0; box-shadow: 0 0 40px var(--success); }
+}
+@keyframes judgedGood {
+  to { transform: translateY(-50%) scale(1.3); opacity: 0; box-shadow: 0 0 40px var(--warning); }
+}
+@keyframes judgedMiss {
+  to { transform: translateY(-50%) scale(0.8); opacity: 0; }
+}
+
+.rhythm-judgement {
+  position: absolute;
+  top: -50px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.6rem;
+  font-weight: 900;
+  text-shadow: 0 0 20px currentColor;
+  animation: judgementShow 0.5s ease;
+  pointer-events: none;
+}
+@keyframes judgementShow {
+  0% { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  30% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-15px); }
+}
+.rhythm-judgement.perfect { color: var(--success); }
+.rhythm-judgement.good { color: var(--warning); }
+.rhythm-judgement.miss { color: var(--error); }
+
+/* ============ 거울 모드 ============ */
+.mirror-showing {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(20px);
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px;
+}
+.mirror-showing-label {
+  font-size: 0.95rem;
+  color: var(--mirror);
+  font-weight: 700;
+  margin-bottom: 16px;
+  letter-spacing: 1px;
+}
+.mirror-showing-emoji {
+  font-size: clamp(6rem, 30vw, 10rem);
+  line-height: 1;
+  margin-bottom: 16px;
+  animation: mirrorBounce 0.6s ease;
+}
+@keyframes mirrorBounce {
+  0% { transform: scale(0.5); opacity: 0; }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.mirror-showing-name {
+  font-size: clamp(1.4rem, 6vw, 2rem);
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--mirror), #e0a0ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.mirror-showing-progress {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  margin-top: 12px;
+}
+
+/* 준비 배너 */
+.ready-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 7;
+  pointer-events: none;
+  animation: readyPulse 2s ease-in-out infinite;
+}
+.ready-banner-inner {
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(16px);
+  border: 2px solid rgba(124, 92, 255, 0.6);
+  border-radius: 24px;
+  padding: 20px 28px;
+  text-align: center;
+  max-width: calc(100vw - 64px);
+}
+.ready-icon {
+  font-size: 2.8rem;
+  margin-bottom: 10px;
+  animation: bounce 1.2s ease-in-out infinite;
+}
+.ready-banner-text { font-size: 1rem; font-weight: 600; color: white; line-height: 1.4; }
+@keyframes readyPulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.03); }
+}
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+/* 미션 미리보기 */
+.mission-preview {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(20px);
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  animation: missionFadeIn 0.3s ease;
+}
+@keyframes missionFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.mission-preview-inner {
+  text-align: center;
+  padding: 40px 30px;
+  max-width: 90%;
+  animation: missionScaleIn 0.4s ease;
+}
+@keyframes missionScaleIn {
+  from { transform: scale(0.7); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.preview-emoji {
+  font-size: clamp(5rem, 25vw, 9rem);
+  line-height: 1;
+  margin-bottom: 20px;
+  animation: previewBounce 0.8s ease infinite alternate;
+}
+@keyframes previewBounce {
+  from { transform: translateY(-8px); }
+  to { transform: translateY(8px); }
+}
+.preview-name {
+  font-size: clamp(1.8rem, 8vw, 2.6rem);
+  font-weight: 900;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.preview-instruction {
+  font-size: clamp(1rem, 4.5vw, 1.3rem);
+  color: var(--text-dim);
+  margin-bottom: 30px;
+}
+.preview-countdown {
+  font-size: clamp(4rem, 20vw, 7rem);
+  font-weight: 900;
+  color: var(--warning);
+  line-height: 1;
+  text-shadow: 0 0 40px rgba(255, 204, 92, 0.6);
+  animation: countdownPulse 1s ease infinite;
+}
+@keyframes countdownPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+.preview-countdown.go {
+  color: var(--success);
+  text-shadow: 0 0 40px rgba(0, 255, 163, 0.8);
+  animation: goFlash 0.4s ease;
+}
+@keyframes goFlash {
+  0% { transform: scale(0.5); opacity: 0; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* 디버그 */
+.debug-panel {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text);
+  z-index: 6;
+  max-width: 200px;
+  border: 1px solid rgba(124, 92, 255, 0.3);
+}
+.debug-row { padding: 2px 0; }
+.debug-row b { color: var(--primary); }
+.debug-ok { color: var(--success); }
+.debug-warn { color: var(--warning); }
+.debug-data { color: var(--text-dim); font-size: 9px; }
+
+.debug-controls {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 6;
+}
+.debug-btn {
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.7);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.hold-timer {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70px;
+  height: 70px;
+  z-index: 5;
+}
+.hold-timer svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.timer-bg { fill: rgba(0, 0, 0, 0.5); stroke: rgba(255, 255, 255, 0.2); stroke-width: 6; }
+.timer-fg {
+  fill: none;
+  stroke: var(--success);
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-dasharray: 283;
+  stroke-dashoffset: 283;
+  transition: stroke-dashoffset 0.1s linear;
+}
+.timer-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.success-overlay, .miss-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  z-index: 8;
+  animation: flashOverlay 0.7s ease;
+}
+.success-overlay { background: rgba(0, 255, 163, 0.2); }
+.miss-overlay { background: rgba(255, 92, 124, 0.2); animation-duration: 0.6s; }
+.success-text, .miss-text {
+  font-size: clamp(2rem, 10vw, 3.5rem);
+  font-weight: 800;
+  text-shadow: 0 4px 20px currentColor;
+  animation: scaleIn 0.4s ease;
+}
+.success-text { color: var(--success); }
+.miss-text { color: var(--error); }
+@keyframes flashOverlay {
+  0% { opacity: 0; }
+  30% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes scaleIn {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  z-index: 20;
+  gap: 16px;
+}
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--bg-elev2);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.bottom-bar {
+  padding: 10px 16px;
+  background: var(--bg);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.feedback { font-size: 0.9rem; color: var(--text-dim); text-align: center; }
+.feedback.ok { color: var(--success); }
+.feedback.warn { color: var(--warning); }
+
+/* 완료 화면 */
+#endScreen {
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  background: radial-gradient(ellipse at top, #1f3a2e 0%, var(--bg) 60%);
+}
+.end-content { text-align: center; max-width: 420px; width: 100%; }
+.celebration { font-size: 5rem; margin-bottom: 16px; animation: bounce 1s ease infinite; }
+.end-content h1 { font-size: 2rem; margin-bottom: 8px; }
+
+.stars-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 16px 0 24px;
+}
+.stars-row .star {
+  font-size: 3rem;
+  filter: grayscale(1) opacity(0.3);
+  transform: scale(0.8);
+  transition: all 0.3s ease;
+}
+.stars-row .star.earned {
+  filter: none;
+  transform: scale(1);
+  animation: starPop 0.5s ease;
+}
+@keyframes starPop {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 24px 0;
+}
+.stat { background: var(--bg-elev); border-radius: 12px; padding: 16px; }
+.stat-label { font-size: 0.85rem; color: var(--text-dim); margin-bottom: 4px; }
+.stat-value { font-size: 1.5rem; font-weight: 700; color: var(--success); }
+
+.extra-stats {
+  background: var(--bg-elev);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+.extra-stats b { color: var(--combo); }
+
+.end-best-badge {
+  background: linear-gradient(135deg, var(--combo), #ff9500);
+  color: #000;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-weight: 800;
+  font-size: 1rem;
+  margin-bottom: 16px;
+  display: inline-block;
+  animation: badgePulse 1s ease infinite;
+}
+@keyframes badgePulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.6); }
+  50% { transform: scale(1.05); box-shadow: 0 0 20px 4px rgba(255, 215, 0, 0.6); }
+}
