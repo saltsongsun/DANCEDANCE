@@ -52,15 +52,15 @@ export function normalizePose(lm) {
 export function poseDistance(normA, normB) {
   if (!normA || !normB) return Infinity;
   const KEY_INDICES = [0, 11, 12, 13, 14, 15, 16];
-  // 가중치 평준화 - 손목/팔꿈치 비중 줄여서 작은 흔들림에 덜 민감하게
+  // 손목/팔꿈치 가중치 더 낮춤 - 좌우 펼침 자세에서도 관대하게
   const WEIGHTS = {
     0: 0.5,    // 코
     11: 0.5,   // 어깨
     12: 0.5,
-    13: 0.8,   // 팔꿈치 (이전 1.5 → 0.8)
-    14: 0.8,
-    15: 1.2,   // 손목 (이전 2.0 → 1.2)
-    16: 1.2
+    13: 0.5,   // 팔꿈치 (이전 0.8 → 0.5)
+    14: 0.5,
+    15: 0.7,   // 손목 (이전 1.2 → 0.7)
+    16: 0.7
   };
   let totalWeighted = 0;
   let totalWeight = 0;
@@ -97,9 +97,9 @@ export function createCustomPose(customData) {
       }
       const d = poseDistance(currentNorm, customData.referencePose);
       const isSampleData = customData.isSample === true;
-      // 진입 1.3, 유지 1.6 - 적당히 관대
-      const enterThreshold = 1.3;
-      const exitThreshold = 1.6;
+      // 진입 2.0, 유지 2.5
+      const enterThreshold = 2.0;
+      const exitThreshold = 2.5;
       const threshold = isHolding ? exitThreshold : enterThreshold;
       const debug = `유사도=${d.toFixed(3)} 필요<${threshold} ${isSampleData ? '(sample)' : '(user)'}`;
       if (d < threshold) {
@@ -243,10 +243,10 @@ const SAMPLE_POSES_RAW = [
       0:  [0, -1.5],
       11: [-0.5, 0],
       12: [0.5, 0],
-      13: [-1.3, -0.9],
-      14: [1.3, -0.9],
-      15: [-1.8, -1.8],
-      16: [1.8, -1.8]
+      13: [-0.9, -0.6],  // 팔꿈치 더 안쪽
+      14: [0.9, -0.6],
+      15: [-1.2, -1.3],  // 손목 더 안쪽
+      16: [1.2, -1.3]
     }
   },
   {
@@ -275,10 +275,10 @@ const SAMPLE_POSES_RAW = [
       0:  [0, -1.5],
       11: [-0.5, 0],
       12: [0.5, 0],
-      13: [-1.5, 0],     // 팔꿈치 어깨 높이 바깥
-      14: [1.5, 0],
-      15: [-2.5, 0],     // 손목 더 바깥 어깨 높이
-      16: [2.5, 0]
+      13: [-1.1, 0],     // 팔꿈치 안쪽
+      14: [1.1, 0],
+      15: [-1.7, 0],     // 손목 - 평범한 펼침
+      16: [1.7, 0]
     }
   },
   {
@@ -320,10 +320,10 @@ const SAMPLE_POSES_RAW = [
       0:  [0, -1.5],
       11: [-0.5, 0],
       12: [0.5, 0],
-      13: [-1.1, 0.9],
-      14: [1.1, 0.9],
-      15: [-1.7, 1.5],
-      16: [1.7, 1.5]
+      13: [-0.7, 0.6],   // 팔꿈치 더 안쪽
+      14: [0.7, 0.6],
+      15: [-1.1, 1.1],   // 손목 더 안쪽
+      16: [1.1, 1.1]
     }
   },
 
@@ -493,10 +493,10 @@ const SAMPLE_POSES_RAW = [
       0:  [0, -1.5],
       11: [-0.5, 0],
       12: [0.5, 0],
-      13: [-1.0, -1.0],
-      14: [1.0, -1.0],
-      15: [-1.5, -2.1],
-      16: [1.5, -2.1]
+      13: [-0.9, -0.9],
+      14: [0.9, -0.9],
+      15: [-1.3, -1.9],
+      16: [1.3, -1.9]
     }
   }
 ];
