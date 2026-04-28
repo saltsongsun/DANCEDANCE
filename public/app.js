@@ -259,8 +259,8 @@ function smoothForVisual(current, prev, factor) {
 // ============ 투표 + 디바운스 ============
 const voteHistory = [];
 let lastPassTime = 0;
-let mustSeeFailFirst = false; // 동작 시작 시 true - 한번 FAIL 봐야 PASS 인정
-let hasSeenFail = false;       // FAIL을 한번 봤는지
+let stepGracePeriodEnd = 0; // 이 시각 전까지는 PASS 차단 (자동 통과 방지)
+const STEP_GRACE_MS = 1000; // 새 동작 시작 후 1초 대기
 
 function decidePass(currentRawPass) {
   voteHistory.push(currentRawPass);
@@ -270,12 +270,8 @@ function decidePass(currentRawPass) {
   const now = performance.now();
   const recentlyPassed = (now - lastPassTime) < CONFIG.passDebounceMs;
 
-  // FAIL 한번 봐야 PASS 인정
-  if (mustSeeFailFirst && !hasSeenFail) {
-    if (!currentRawPass) {
-      hasSeenFail = true; // FAIL을 봤음
-    }
-    // 아직 FAIL 안 봤으면 무조건 미통과로 처리
+  // 동작 시작 후 일정 시간은 PASS 차단 (이전 자세로 자동 통과 방지)
+  if (now < stepGracePeriodEnd) {
     return { finalPass: false, voteSaysPass: false, recentlyPassed: false, passCount, blocked: true };
   }
 
@@ -287,8 +283,7 @@ function decidePass(currentRawPass) {
 function resetVote() {
   voteHistory.length = 0;
   lastPassTime = 0;
-  mustSeeFailFirst = true; // 다음 동작은 FAIL 한번 봐야 시작
-  hasSeenFail = false;
+  stepGracePeriodEnd = performance.now() + STEP_GRACE_MS;
 }
 
 // ============ 화면 전환 ============
@@ -1542,7 +1537,11 @@ function updateDebugPanel(result, rawResult, decision, isHolding) {
   let html = `<div class="debug-row"><b>FPS:</b> ${fps}</div>`;
   html += `<div class="debug-row"><b>Mode:</b> ${mode || "-"} <b>Phase:</b> ${phase}</div>`;
   if (inPreview) html += `<div class="debug-row debug-warn">⏱ 카운트다운</div>`;
-  if (mustSeeFailFirst && !hasSeenFail) html += `<div class="debug-row debug-warn">🔄 자세 풀고 다시 잡으세요</div>`;
+  const now = performance.now();
+  if (now < stepGracePeriodEnd) {
+    const remain = ((stepGracePeriodEnd - now) / 1000).toFixed(1);
+    html += `<div class="debug-row debug-warn">⏳ 대기 ${remain}s</div>`;
+  }
   const pose = getActivePose();
   html += `<div class="debug-row"><b>Pose:</b> ${pose?.name || "-"}</div>`;
   if (!result.landmarks || result.landmarks.length === 0) {
@@ -1701,9 +1700,9 @@ function handleDetection(result) {
       if (heldFor >= holdMs) advanceStepSeq(true);
     } else {
       seqStepHeldSince = null;
-      // PASS 대기 중이면 안내, 아니면 원래 힌트
+      // 대기 시간 중이면 안내, 아니면 원래 힌트
       if (decision && decision.blocked) {
-        setFeedback("자세 바꿔서 다시 잡아주세요", "warn");
+        setFeedback("준비 중...", "");
       } else {
         setFeedback(r.hint, "");
       }
