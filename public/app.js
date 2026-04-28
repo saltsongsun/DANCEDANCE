@@ -259,6 +259,9 @@ function smoothForVisual(current, prev, factor) {
 // ============ 투표 + 디바운스 ============
 const voteHistory = [];
 let lastPassTime = 0;
+let mustSeeFailFirst = false; // 동작 시작 시 true - 한번 FAIL 봐야 PASS 인정
+let hasSeenFail = false;       // FAIL을 한번 봤는지
+
 function decidePass(currentRawPass) {
   voteHistory.push(currentRawPass);
   if (voteHistory.length > CONFIG.voteFrames) voteHistory.shift();
@@ -266,11 +269,27 @@ function decidePass(currentRawPass) {
   const voteSaysPass = passCount >= CONFIG.voteThreshold;
   const now = performance.now();
   const recentlyPassed = (now - lastPassTime) < CONFIG.passDebounceMs;
+
+  // FAIL 한번 봐야 PASS 인정
+  if (mustSeeFailFirst && !hasSeenFail) {
+    if (!currentRawPass) {
+      hasSeenFail = true; // FAIL을 봤음
+    }
+    // 아직 FAIL 안 봤으면 무조건 미통과로 처리
+    return { finalPass: false, voteSaysPass: false, recentlyPassed: false, passCount, blocked: true };
+  }
+
   const finalPass = voteSaysPass || recentlyPassed;
   if (currentRawPass) lastPassTime = now;
   return { finalPass, voteSaysPass, recentlyPassed, passCount };
 }
-function resetVote() { voteHistory.length = 0; lastPassTime = 0; }
+
+function resetVote() {
+  voteHistory.length = 0;
+  lastPassTime = 0;
+  mustSeeFailFirst = true; // 다음 동작은 FAIL 한번 봐야 시작
+  hasSeenFail = false;
+}
 
 // ============ 화면 전환 ============
 function showScreen(screen) {
@@ -1523,14 +1542,13 @@ function updateDebugPanel(result, rawResult, decision, isHolding) {
   let html = `<div class="debug-row"><b>FPS:</b> ${fps}</div>`;
   html += `<div class="debug-row"><b>Mode:</b> ${mode || "-"} <b>Phase:</b> ${phase}</div>`;
   if (inPreview) html += `<div class="debug-row debug-warn">⏱ 카운트다운</div>`;
+  if (mustSeeFailFirst && !hasSeenFail) html += `<div class="debug-row debug-warn">🔄 자세 풀고 다시 잡으세요</div>`;
   const pose = getActivePose();
   html += `<div class="debug-row"><b>Pose:</b> ${pose?.name || "-"}</div>`;
   if (!result.landmarks || result.landmarks.length === 0) {
     html += `<div class="debug-row debug-warn">❌ 감지 안됨</div>`;
   } else {
     html += `<div class="debug-row debug-ok">✓ 감지</div>`;
-
-    // 실시간 정규화 좌표 표시 (사용자 자세 진단용)
     if (lastDetectedLandmarks) {
       const norm = normalizePose(lastDetectedLandmarks);
       if (norm) {
@@ -1539,12 +1557,12 @@ function updateDebugPanel(result, rawResult, decision, isHolding) {
         html += `<div class="debug-row debug-data">L손${fmt(norm[15])} R손${fmt(norm[16])}</div>`;
       }
     }
-
     if (rawResult && decision) {
       const rc = rawResult.pass ? "debug-ok" : "debug-warn";
       const fc = decision.finalPass ? "debug-ok" : "debug-warn";
       html += `<div class="debug-row ${rc}">Raw: ${rawResult.pass ? "✅" : "❌"} ${rawResult.hint}</div>`;
-      html += `<div class="debug-row ${fc}">Final: ${decision.finalPass ? "✅" : "❌"}</div>`;
+      const blockedTag = decision.blocked ? " (대기)" : "";
+      html += `<div class="debug-row ${fc}">Final: ${decision.finalPass ? "✅" : "❌"}${blockedTag}</div>`;
       if (rawResult.debug) html += `<div class="debug-row debug-data">${rawResult.debug}</div>`;
     }
   }
@@ -1683,7 +1701,12 @@ function handleDetection(result) {
       if (heldFor >= holdMs) advanceStepSeq(true);
     } else {
       seqStepHeldSince = null;
-      setFeedback(r.hint, "");
+      // PASS 대기 중이면 안내, 아니면 원래 힌트
+      if (decision && decision.blocked) {
+        setFeedback("자세 바꿔서 다시 잡아주세요", "warn");
+      } else {
+        setFeedback(r.hint, "");
+      }
     }
   }
   return { rawResult: r, decision, isHolding };
