@@ -128,7 +128,7 @@ const CONFIG = {
   minDetectionConfidence: 0.5,
   minPresenceConfidence: 0.5,
   minTrackingConfidence: 0.5,
-  countdownSeconds: 3,
+  countdownSeconds: 2,
   recordCountdownSeconds: 5
 };
 
@@ -206,7 +206,7 @@ let phase = "ready"; // "ready" | "playing" | "done"
 let sessionStartTime = null;
 const HOLD_DURATION_MS = 600; // 1초 → 0.6초 (자세 잡으면 빨리 통과)
 const READY_HOLD_MS = 600;
-const SINGLE_TIMEOUT_MS = 12000; // 8초 → 12초
+const SINGLE_TIMEOUT_MS = 18000; // 12초 → 18초
 let currentPoseIndex = 0;
 let holdStartTime = null;
 let singleStepStartTime = null; // 싱글 모드 스텝 시작 시각
@@ -743,9 +743,9 @@ function saveCurrentRoutine() {
   const name = routineName.value.trim();
   if (!name || builderSequence.length === 0) return;
   const timing = {
-    easy: { stepHoldMs: 300, stepWindowMs: 6000 },
-    medium: { stepHoldMs: 250, stepWindowMs: 4500 },
-    hard: { stepHoldMs: 200, stepWindowMs: 3500 }
+    easy: { stepHoldMs: 300, stepWindowMs: 10000 },
+    medium: { stepHoldMs: 250, stepWindowMs: 7500 },
+    hard: { stepHoldMs: 200, stepWindowMs: 5500 }
   }[builderDifficulty];
   const routine = {
     id: `routine_${Date.now()}`,
@@ -765,9 +765,9 @@ function saveCurrentRoutine() {
 function playCurrentBuilder() {
   if (builderSequence.length === 0) return;
   const timing = {
-    easy: { stepHoldMs: 300, stepWindowMs: 6000 },
-    medium: { stepHoldMs: 250, stepWindowMs: 4500 },
-    hard: { stepHoldMs: 200, stepWindowMs: 3500 }
+    easy: { stepHoldMs: 300, stepWindowMs: 10000 },
+    medium: { stepHoldMs: 250, stepWindowMs: 7500 },
+    hard: { stepHoldMs: 200, stepWindowMs: 5500 }
   }[builderDifficulty];
   const tempRoutine = {
     id: "temp_" + Date.now(),
@@ -808,9 +808,9 @@ function startChallenge() {
   }
 
   const timing = {
-    easy: { stepHoldMs: 300, stepWindowMs: 6000 },
-    medium: { stepHoldMs: 250, stepWindowMs: 4500 },
-    hard: { stepHoldMs: 200, stepWindowMs: 3500 }
+    easy: { stepHoldMs: 300, stepWindowMs: 10000 },
+    medium: { stepHoldMs: 250, stepWindowMs: 7500 },
+    hard: { stepHoldMs: 200, stepWindowMs: 5500 }
   }[challengeDifficulty];
 
   selectedSequence = {

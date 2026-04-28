@@ -97,9 +97,9 @@ export function createCustomPose(customData) {
       }
       const d = poseDistance(currentNorm, customData.referencePose);
       const isSampleData = customData.isSample === true;
-      // 진입 1.2, 유지 1.5 - 매우 관대
-      const enterThreshold = 1.2;
-      const exitThreshold = 1.5;
+      // 진입 1.5, 유지 1.8 - 매우 관대
+      const enterThreshold = 1.5;
+      const exitThreshold = 1.8;
       const threshold = isHolding ? exitThreshold : enterThreshold;
       const debug = `유사도=${d.toFixed(3)} 필요<${threshold} ${isSampleData ? '(sample)' : '(user)'}`;
       if (d < threshold) {
@@ -529,7 +529,7 @@ export const SEQUENCES = [
     description: "샘플 동작 4개",
     difficulty: "easy",
     stepHoldMs: 300,
-    stepWindowMs: 6000,
+    stepWindowMs: 10000,
     steps: ["sample_both_up", "sample_t_pose", "sample_left_up", "sample_right_up"]
   }
 ];
