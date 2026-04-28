@@ -97,9 +97,9 @@ export function createCustomPose(customData) {
       }
       const d = poseDistance(currentNorm, customData.referencePose);
       const isSampleData = customData.isSample === true;
-      // 진입 1.5, 유지 1.8 - 매우 관대
-      const enterThreshold = 1.5;
-      const exitThreshold = 1.8;
+      // 진입 1.3, 유지 1.6 - 적당히 관대
+      const enterThreshold = 1.3;
+      const exitThreshold = 1.6;
       const threshold = isHolding ? exitThreshold : enterThreshold;
       const debug = `유사도=${d.toFixed(3)} 필요<${threshold} ${isSampleData ? '(sample)' : '(user)'}`;
       if (d < threshold) {
