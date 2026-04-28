@@ -1057,9 +1057,9 @@ async function startMirrorRound() {
   selectedSequence.description = `라운드 ${mirrorRound}`;
   seqStepIndex = 0;
   seqStepHeldSince = null;
-  resetVote();
   updatePoseUI();
   await showMissionPreview(getActivePose());
+  resetVote();
   setFeedback("자세!", "");
   stepCountdown.classList.remove("hidden");
   seqStepStartTime = performance.now();
@@ -1116,6 +1116,7 @@ async function mirrorAdvance(success) {
     setTimeout(async () => {
       updatePoseUI();
       await showMissionPreview(getActivePose());
+      resetVote();
       seqStepStartTime = performance.now();
       isAdvancing = false;
     }, 600);
@@ -1350,17 +1351,18 @@ async function startMainGame() {
   if (mode === "single") {
     currentPoseIndex = 0;
     holdStartTime = null;
-    singleStepStartTime = performance.now();
     updatePoseUI();
     await showMissionPreview(POSES[0]);
+    resetVote();
     setFeedback("자세!", "");
-    singleStepStartTime = performance.now(); // 미리보기 끝난 후 다시 시작
+    singleStepStartTime = performance.now();
   } else {
     // sequence, challenge
     seqStepIndex = 0;
     seqStepHeldSince = null;
     updatePoseUI();
     await showMissionPreview(getActivePose());
+    resetVote();
     setFeedback("자세!", "");
     stepCountdown.classList.remove("hidden");
     seqStepStartTime = performance.now();
@@ -1387,6 +1389,7 @@ async function advancePoseSingle(success = true) {
     setTimeout(async () => {
       updatePoseUI();
       await showMissionPreview(POSES[currentPoseIndex]);
+      resetVote();
       singleStepStartTime = performance.now();
       isAdvancing = false;
     }, 800);
@@ -1429,9 +1432,10 @@ async function advanceStepSeq(success) {
     setTimeout(async () => {
       updatePoseUI();
       await showMissionPreview(getActivePose());
-      // 미리보기 끝난 후 정확히 시간 시작
+      // 미리보기 끝난 직후 - 여기서 grace period 시작 (자동 통과 방지)
+      resetVote();
       seqStepStartTime = performance.now();
-      isAdvancing = false; // detection 다시 활성화
+      isAdvancing = false;
     }, 600);
   }
 }
