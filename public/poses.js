@@ -77,6 +77,19 @@ export function poseDistance(normA, normB) {
   return totalWeighted / totalWeight;
 }
 
+// ============ 임계값 (외부에서 조정 가능) ============
+let GLOBAL_ENTER_THRESHOLD = 1.6;
+let GLOBAL_EXIT_THRESHOLD = 2.0;
+
+export function setThresholds(enter, exit) {
+  GLOBAL_ENTER_THRESHOLD = enter;
+  GLOBAL_EXIT_THRESHOLD = exit;
+}
+
+export function getThresholds() {
+  return { enter: GLOBAL_ENTER_THRESHOLD, exit: GLOBAL_EXIT_THRESHOLD };
+}
+
 // ============ 커스텀 포즈 매처 생성 ============
 export function createCustomPose(customData) {
   return {
@@ -96,14 +109,11 @@ export function createCustomPose(customData) {
         return { pass: false, hint: "자세를 인식 중...", debug: "정규화 실패" };
       }
       const d = poseDistance(currentNorm, customData.referencePose);
-      const isSampleData = customData.isSample === true;
-      // 어린이 친화 - 진입 1.9, 유지 2.3
-      const enterThreshold = 1.9;
-      const exitThreshold = 2.3;
-      const threshold = isHolding ? exitThreshold : enterThreshold;
-      const debug = `유사도=${d.toFixed(3)} 필요<${threshold} ${isSampleData ? '(sample)' : '(user)'}`;
+      // 외부 조정 가능한 임계값 사용
+      const threshold = isHolding ? GLOBAL_EXIT_THRESHOLD : GLOBAL_ENTER_THRESHOLD;
+      const debug = `유사도=${d.toFixed(3)} 필요<${threshold.toFixed(2)}`;
       if (d < threshold) {
-        const quality = d < 0.5 ? "완벽!" : d < 0.9 ? "좋아요!" : "OK!";
+        const quality = d < threshold * 0.4 ? "완벽!" : d < threshold * 0.7 ? "좋아요!" : "OK!";
         return { pass: true, hint: quality, debug };
       }
       const hint = getDiffHint(currentNorm, customData.referencePose);

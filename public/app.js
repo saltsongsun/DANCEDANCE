@@ -6,7 +6,8 @@ import {
 
 import {
   POSES, POSE_LIBRARY, SEQUENCES, READY_POSE,
-  SAMPLE_POSES, normalizePose, createCustomPose
+  SAMPLE_POSES, normalizePose, createCustomPose,
+  setThresholds, getThresholds
 } from "/poses.js";
 
 // ============ DOM ============
@@ -147,6 +148,7 @@ const EMOJI_OPTIONS = [
 const POSES_KEY = "dance_pose_custom_poses_v1";
 const ROUTINES_KEY = "dance_pose_routines_v2";
 const BEST_SCORES_KEY = "dance_pose_best_scores_v1";
+const THRESHOLD_KEY = "dance_pose_thresholds_v1";
 
 function lsLoad(key, fallback = []) {
   try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; }
@@ -1852,6 +1854,67 @@ skipBtn.addEventListener("click", () => {
   else advanceStepSeq(false);
 });
 debugToggle.textContent = debugVisible ? "🐛 ON" : "🐛 OFF";
+
+// ============ 임계값 조정 슬라이더 ============
+const thresholdToggle = document.getElementById("thresholdToggle");
+const thresholdPanel = document.getElementById("thresholdPanel");
+const thresholdClose = document.getElementById("thresholdClose");
+const enterSlider = document.getElementById("enterThresholdSlider");
+const exitSlider = document.getElementById("exitThresholdSlider");
+const enterValue = document.getElementById("enterThresholdValue");
+const exitValue = document.getElementById("exitThresholdValue");
+
+// 저장된 임계값 불러오기
+function loadSavedThresholds() {
+  const saved = lsLoad(THRESHOLD_KEY, null);
+  if (saved && typeof saved.enter === "number" && typeof saved.exit === "number") {
+    setThresholds(saved.enter, saved.exit);
+    enterSlider.value = saved.enter;
+    exitSlider.value = saved.exit;
+    enterValue.textContent = saved.enter.toFixed(1);
+    exitValue.textContent = saved.exit.toFixed(1);
+  }
+}
+
+function applyThresholds() {
+  const enter = parseFloat(enterSlider.value);
+  let exit = parseFloat(exitSlider.value);
+  // exit가 enter보다 작으면 자동 보정
+  if (exit < enter) {
+    exit = enter;
+    exitSlider.value = exit;
+  }
+  enterValue.textContent = enter.toFixed(1);
+  exitValue.textContent = exit.toFixed(1);
+  setThresholds(enter, exit);
+  lsSave(THRESHOLD_KEY, { enter, exit });
+}
+
+thresholdToggle.addEventListener("click", () => {
+  thresholdPanel.classList.toggle("hidden");
+});
+thresholdClose.addEventListener("click", () => {
+  thresholdPanel.classList.add("hidden");
+});
+enterSlider.addEventListener("input", applyThresholds);
+exitSlider.addEventListener("input", applyThresholds);
+
+// 프리셋 버튼
+document.querySelectorAll(".threshold-preset-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const preset = btn.dataset.preset;
+    let enter, exit;
+    if (preset === "strict")     { enter = 1.0; exit = 1.3; }
+    else if (preset === "normal") { enter = 1.6; exit = 2.0; }
+    else if (preset === "easy")   { enter = 2.2; exit = 2.8; }
+    enterSlider.value = enter;
+    exitSlider.value = exit;
+    applyThresholds();
+  });
+});
+
+// 초기화
+loadSavedThresholds();
 
 // 시작 시 최고 점수 표시
 renderBestScores();

@@ -1107,6 +1107,115 @@ canvas { object-fit: contain; }
   backdrop-filter: blur(10px);
 }
 
+/* 임계값 조정 패널 */
+.threshold-panel {
+  position: absolute;
+  bottom: 110px;
+  right: 12px;
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(124, 92, 255, 0.4);
+  border-radius: 14px;
+  padding: 14px;
+  min-width: 240px;
+  max-width: 280px;
+  z-index: 7;
+  font-size: 12px;
+}
+
+.threshold-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.threshold-close {
+  background: transparent;
+  color: var(--text-dim);
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 6px;
+}
+.threshold-close:hover { color: var(--error); }
+
+.threshold-row {
+  margin-bottom: 12px;
+}
+.threshold-row label {
+  display: block;
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.threshold-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.threshold-slider-row input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--bg-elev2);
+  border-radius: 2px;
+  outline: none;
+}
+.threshold-slider-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--primary);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.threshold-slider-row input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--primary);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.threshold-value {
+  font-weight: 700;
+  color: var(--success);
+  min-width: 35px;
+  text-align: right;
+  font-family: 'SF Mono', Menlo, monospace;
+}
+
+.threshold-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.threshold-preset-btn {
+  padding: 6px 4px;
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--bg-elev2);
+  border-radius: 6px;
+  font-size: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+}
+.threshold-preset-btn:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
 .hold-timer {
   position: absolute;
   bottom: 80px;
